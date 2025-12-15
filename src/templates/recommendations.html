@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}Customize Recommendations - MovieRec{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item"><a href="{{ url_for('home', user_id=user_id) }}">User {{ user_id }}</a></li>
+                <li class="breadcrumb-item active">Customize</li>
+            </ol>
+        </nav>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-sliders-h me-2"></i>
+                    Recommendation Settings
+                </h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('recommendations') }}" method="get" id="settings-form">
+                    <input type="hidden" name="user_id" value="{{ user_id }}">
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="model" class="form-label">Model</label>
+                                <select class="form-select" id="model" name="model">
+                                    {% for m in available_models %}
+                                    <option value="{{ m }}" {% if m == model %}selected{% endif %}>
+                                        {{ m | title }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">
+                                    Choose the recommendation algorithm
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="top_k" class="form-label">Number of Recommendations</label>
+                                <input type="range" 
+                                       class="form-range" 
+                                       id="top_k" 
+                                       name="top_k" 
+                                       min="5" 
+                                       max="50" 
+                                       step="5"
+                                       value="{{ recommendations | length or 10 }}">
+                                <div class="d-flex justify-content-between">
+                                    <span>5</span>
+                                    <span id="top_k_value">{{ recommendations | length or 10 }}</span>
+                                    <span>50</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sync-alt me-2"></i>
+                        Update Recommendations
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <h3 class="mb-4">
+            <i class="fas fa-film me-2"></i>
+            Your Recommendations
+            <small class="text-muted">({{ recommendations | length }} results using {{ model | title }})</small>
+        </h3>
+        
+        {% if recommendations %}
+        <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 row-cols-xl-5 g-4">
+            {% for movie in recommendations %}
+            <div class="col">
+                <div class="card h-100 movie-card">
+                    <div class="card-img-wrapper position-relative">
+                        {% if movie.poster_path %}
+                        <img src="https://image.tmdb.org/t/p/w500{{ movie.poster_path }}" 
+                             class="card-img-top" 
+                             alt="{{ movie.title }}">
+                        {% else %}
+                        <div class="card-img-placeholder d-flex align-items-center justify-content-center">
+                            <i class="fas fa-film fa-3x text-muted"></i>
+                        </div>
+                        {% endif %}
+                        <span class="badge bg-primary position-absolute top-0 start-0 m-2">
+                            #{{ loop.index }}
+                        </span>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="card-title text-truncate" title="{{ movie.title }}">
+                            {{ movie.title }}
+                        </h6>
+                        {% if movie.genres %}
+                        <p class="card-text small text-muted text-truncate">
+                            {% if movie.genres is string %}
+                                {{ movie.genres }}
+                            {% else %}
+                                {{ movie.genres[:3] | join(', ') }}
+                            {% endif %}
+                        </p>
+                        {% endif %}
+                        {% if movie.vote_average %}
+                        <p class="card-text small">
+                            <i class="fas fa-star text-warning"></i>
+                            {{ movie.vote_average | round(1) }}
+                        </p>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer bg-transparent border-0">
+                        <a href="{{ url_for('movie_details', movie_id=movie.item_id) }}" 
+                           class="btn btn-sm btn-outline-primary w-100">
+                            Details
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            No recommendations found.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.movie-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.movie-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+.card-img-wrapper {
+    height: 280px;
+    overflow: hidden;
+}
+
+.card-img-top {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.card-img-placeholder {
+    height: 100%;
+    background: #e9ecef;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('top_k').addEventListener('input', function() {
+    document.getElementById('top_k_value').textContent = this.value;
+});
+</script>
+{% endblock %}

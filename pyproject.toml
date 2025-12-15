@@ -1,0 +1,107 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "movie-rec-unified"
+version = "0.1.0"
+description = "Unified Movie Recommendation System with multiple approaches"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Movie Rec Team"}
+]
+keywords = ["recommendation", "machine-learning", "pytorch", "lightgcn", "ncf"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    # Core ML
+    "torch>=2.0.0",
+    "torch-geometric>=2.3.0",
+    "torch-scatter",
+    "torch-sparse",
+    
+    # Vector Search
+    "faiss-cpu>=1.7.4",  # Use faiss-gpu for GPU support
+    
+    # Experiment Tracking
+    "mlflow>=2.0.0",
+    "wandb>=0.15.0",
+    
+    # Logging & CLI
+    "rich>=13.0.0",
+    "hydra-core>=1.3.0",
+    "omegaconf>=2.3.0",
+    
+    # Traditional ML
+    "scikit-learn>=1.3.0",
+    "scikit-surprise>=1.1.3",
+    "scipy>=1.11.0",
+    
+    # Data
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    
+    # Web API
+    "flask>=3.0.0",
+    "flask-sqlalchemy>=3.1.0",
+    "flask-wtf>=1.2.0",
+    
+    # Utils
+    "tqdm>=4.65.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+gpu = [
+    "faiss-gpu>=1.7.4",
+]
+notebooks = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=8.0.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+]
+
+[project.scripts]
+train = "src.train:main"
+serve = "api.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "api*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=src --cov-report=term-missing"

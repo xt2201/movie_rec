@@ -1,0 +1,17 @@
+# Neural Collaborative Filtering (NCF) Configuration
+# Based on NVIDIA DeepLearningExamples implementation
+name: ncf
+type: neural
+
+# Architecture
+mf_dim: 64  # GMF embedding dimension
+mlp_layers: [128, 64, 32, 16]  # MLP layer sizes (first must be even)
+dropout: 0.2
+
+# Training specifics
+num_negatives: 4  # Negative samples per positive
+loss_type: bce  # bce (BCEWithLogitsLoss)
+
+# Pretrain settings (optional)
+pretrain_gmf: null  # Path to pretrained GMF weights
+pretrain_mlp: null  # Path to pretrained MLP weights

@@ -1,0 +1,51 @@
+# Logging Configuration (MLflow + Wandb + Rich)
+name: wandb_mlflow
+
+# Enable/disable loggers
+use_mlflow: true
+use_wandb: true
+use_rich: true
+
+# Weights & Biases
+wandb:
+  project: ${project_name}
+  entity: null  # Your wandb username/team
+  name: ${run_name}
+  tags: ["${model.name}", "${data.name}"]
+  notes: null
+  mode: online  # online, offline, disabled
+  log_model: true
+  watch_model: true
+  watch_log: gradients  # gradients, parameters, all
+  watch_freq: 100
+
+# MLflow
+mlflow:
+  tracking_uri: ${paths.mlflow_dir}
+  experiment_name: ${experiment_name}
+  run_name: ${run_name}
+  log_model: true
+  register_model: false  # Set to true for production
+  registered_model_name: ${model.name}
+
+# Rich console
+rich:
+  show_progress: true
+  show_table: true
+  refresh_rate: 10
+  
+# Logging frequency
+log_every_n_steps: 50
+log_every_n_epochs: 1
+
+# Metrics to track
+metrics:
+  train:
+    - loss
+    - learning_rate
+  val:
+    - loss
+    - precision_at_10
+    - recall_at_10
+    - ndcg_at_10
+    - hit_rate_at_10

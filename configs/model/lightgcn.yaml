@@ -1,0 +1,15 @@
+# LightGCN Model Configuration
+name: lightgcn
+type: graph
+
+# Architecture
+embedding_dim: 64
+num_layers: 3
+dropout: 0.0
+
+# Graph settings
+add_self_loops: false
+normalize: true
+
+# Loss
+loss_type: bpr  # bpr, bce

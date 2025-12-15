@@ -1,0 +1,48 @@
+# MovieLens Dataset Configuration
+name: movielens_small
+
+# Data paths (relative to paths.data_dir)
+files:
+  ratings: movielens-small/ratings.csv
+  movies: movielens-small/movies.csv
+  links: movielens-small/links.csv
+  tags: movielens-small/tags.csv
+
+# Preprocessing
+preprocessing:
+  min_rating: 3.0  # Ratings >= this are considered positive
+  min_user_interactions: 5  # Users with fewer interactions are filtered
+  min_item_interactions: 5  # Items with fewer interactions are filtered
+
+# Train/Val/Test split
+split:
+  strategy: random  # random, temporal, leave_one_out
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  
+# For temporal split
+temporal:
+  timestamp_col: timestamp
+  
+# For leave-one-out
+leave_one_out:
+  num_test_items: 1
+  num_val_items: 1
+
+# Negative sampling (for training)
+negative_sampling:
+  num_negatives: 4
+  strategy: uniform  # uniform, popularity
+
+# DataLoader settings
+dataloader:
+  batch_size: 1024
+  num_workers: 4
+  pin_memory: true
+  shuffle: true
+
+# Graph construction (for GNN models)
+graph:
+  undirected: true
+  add_self_loops: false

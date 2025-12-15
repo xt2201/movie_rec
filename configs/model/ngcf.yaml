@@ -1,0 +1,16 @@
+# NGCF Model Configuration
+name: ngcf
+type: graph
+
+# Architecture
+embedding_dim: 64
+hidden_dims: [64, 64, 64]
+dropout: 0.1
+message_dropout: 0.1
+
+# Graph settings
+add_self_loops: true
+normalize: true
+
+# Loss
+loss_type: bpr

@@ -1,0 +1,32 @@
+# Hybrid Ensemble Model Configuration
+name: hybrid_ensemble
+type: hybrid
+
+# Models to combine
+models:
+  - ncf
+  - nmf_ann
+  - item_cf
+
+# User activity thresholds for switching
+user_thresholds:
+  cold_start: 0  # 0 interactions -> popularity-based
+  limited: 50    # 1-50 interactions -> NCF only
+  moderate: 150  # 51-150 interactions -> 75% NCF + 25% ANN
+  rich: 151      # 151+ interactions -> 50% NCF + 50% ANN
+
+# Weights for each tier (sum to 1.0)
+weights:
+  cold_start:
+    popularity: 1.0
+  limited:
+    ncf: 1.0
+  moderate:
+    ncf: 0.75
+    nmf_ann: 0.25
+  rich:
+    ncf: 0.5
+    nmf_ann: 0.5
+
+# Fallback
+fallback_to_popularity: true

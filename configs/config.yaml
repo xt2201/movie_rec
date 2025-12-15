@@ -1,0 +1,35 @@
+# Main Hydra configuration
+defaults:
+  - model: lightgcn
+  - data: movielens
+  - trainer: default
+  - logger: wandb_mlflow
+  - _self_
+
+# Experiment settings
+experiment_name: movie_recommendation
+project_name: movie-rec
+run_name: ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
+
+# Reproducibility
+seed: 42
+
+# Device settings
+device: auto  # auto, cpu, cuda, mps
+
+# Paths (relative to hydra working dir)
+paths:
+  data_dir: ${hydra:runtime.cwd}/data
+  output_dir: ${hydra:runtime.cwd}/outputs
+  checkpoint_dir: ${hydra:runtime.cwd}/checkpoints
+  mlflow_dir: ${hydra:runtime.cwd}/mlruns
+
+# Hydra settings
+hydra:
+  run:
+    dir: outputs/${experiment_name}/${run_name}
+  sweep:
+    dir: outputs/${experiment_name}/sweeps
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false

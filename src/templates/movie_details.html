@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}{{ movie.title or 'Movie Details' }} - MovieRec{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+                <li class="breadcrumb-item active">{{ movie.title or 'Movie' }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <div class="movie-poster mb-4">
+            {% if movie.poster_path %}
+            <img src="https://image.tmdb.org/t/p/w500{{ movie.poster_path }}" 
+                 class="img-fluid rounded shadow" 
+                 alt="{{ movie.title }}">
+            {% else %}
+            <div class="poster-placeholder d-flex align-items-center justify-content-center rounded">
+                <i class="fas fa-film fa-5x text-muted"></i>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <div class="col-md-8">
+        <h1 class="mb-3">{{ movie.title or 'Unknown Title' }}</h1>
+        
+        {% if movie.genres %}
+        <div class="mb-3">
+            {% set genres_list = movie.genres if movie.genres is iterable and movie.genres is not string else movie.genres.split('|') %}
+            {% for genre in genres_list %}
+            <span class="badge bg-secondary me-1">{{ genre }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        
+        {% if movie.release_date %}
+        <p class="text-muted">
+            <i class="fas fa-calendar me-2"></i>
+            {{ movie.release_date }}
+        </p>
+        {% endif %}
+        
+        {% if movie.vote_average %}
+        <p>
+            <i class="fas fa-star text-warning me-2"></i>
+            <strong>{{ movie.vote_average | round(1) }}</strong> / 10
+            {% if movie.vote_count %}
+            <span class="text-muted">({{ movie.vote_count }} votes)</span>
+            {% endif %}
+        </p>
+        {% endif %}
+        
+        {% if movie.overview %}
+        <h5 class="mt-4">Overview</h5>
+        <p>{{ movie.overview }}</p>
+        {% endif %}
+        
+        {% if movie.runtime %}
+        <p class="text-muted">
+            <i class="fas fa-clock me-2"></i>
+            {{ movie.runtime }} minutes
+        </p>
+        {% endif %}
+        
+        <div class="mt-4">
+            {% if movie.imdb_id %}
+            <a href="https://www.imdb.com/title/{{ movie.imdb_id }}" 
+               class="btn btn-outline-warning me-2" 
+               target="_blank">
+                <i class="fab fa-imdb me-1"></i> IMDb
+            </a>
+            {% endif %}
+            {% if movie.id %}
+            <a href="https://www.themoviedb.org/movie/{{ movie.tmdb_id or movie.id }}" 
+               class="btn btn-outline-info" 
+               target="_blank">
+                <i class="fas fa-external-link-alt me-1"></i> TMDb
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if similar_movies %}
+<div class="row mt-5">
+    <div class="col-12">
+        <h3 class="mb-4">
+            <i class="fas fa-th-large me-2"></i>
+            Similar Movies
+        </h3>
+        <div class="row row-cols-2 row-cols-md-3 row-cols-lg-6 g-3">
+            {% for similar in similar_movies %}
+            <div class="col">
+                <a href="{{ url_for('movie_details', movie_id=similar.item_id) }}" 
+                   class="text-decoration-none">
+                    <div class="card h-100 similar-card">
+                        <div class="card-img-wrapper">
+                            {% if similar.poster_path %}
+                            <img src="https://image.tmdb.org/t/p/w300{{ similar.poster_path }}" 
+                                 class="card-img-top" 
+                                 alt="{{ similar.title }}">
+                            {% else %}
+                            <div class="card-img-placeholder d-flex align-items-center justify-content-center">
+                                <i class="fas fa-film fa-2x text-muted"></i>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="card-body p-2">
+                            <p class="card-text small text-dark text-truncate mb-0">
+                                {{ similar.title }}
+                            </p>
+                            {% if similar.similarity %}
+                            <small class="text-muted">
+                                {{ (similar.similarity * 100) | round(1) }}% match
+                            </small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.poster-placeholder {
+    height: 400px;
+    background: #e9ecef;
+}
+
+.similar-card {
+    transition: transform 0.2s ease;
+}
+
+.similar-card:hover {
+    transform: translateY(-3px);
+}
+
+.similar-card .card-img-wrapper {
+    height: 180px;
+    overflow: hidden;
+}
+
+.similar-card .card-img-top {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.similar-card .card-img-placeholder {
+    height: 100%;
+    background: #f0f0f0;
+}
+</style>
+{% endblock %}

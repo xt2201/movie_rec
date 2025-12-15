@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Top Rated Movies - MovieRec{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-trophy text-warning me-2"></i>
+            Top Rated Movies
+        </h2>
+        
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            This page shows the highest-rated movies in our database.
+            <a href="{{ url_for('index') }}">Get personalized recommendations</a> based on your preferences!
+        </div>
+        
+        <div id="top-movies-container">
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3 text-muted">Loading top rated movies...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// This would typically fetch from an API endpoint
+// For now, just show a placeholder message
+document.getElementById('top-movies-container').innerHTML = `
+    <div class="alert alert-secondary">
+        <i class="fas fa-tools me-2"></i>
+        Top rated movies feature coming soon! 
+        Please use personalized recommendations in the meantime.
+    </div>
+`;
+</script>
+{% endblock %}

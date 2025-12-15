@@ -1,0 +1,14 @@
+# Item-based Collaborative Filtering Configuration
+name: item_cf
+type: traditional
+
+# KNN settings
+k: 40  # Number of neighbors
+min_k: 1
+similarity: cosine  # cosine, msd, pearson, pearson_baseline
+
+# Shrinkage (regularization)
+shrinkage: 100
+
+# User-based alternative
+user_based: false

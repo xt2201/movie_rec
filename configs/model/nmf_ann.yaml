@@ -1,0 +1,17 @@
+# NMF + FAISS Model Configuration
+name: nmf_ann
+type: neural
+
+# NMF settings
+n_components: 64
+init: nndsvda
+max_iter: 200
+random_state: ${seed}
+
+# FAISS settings
+faiss:
+  index_type: IVFFlat  # Flat, IVFFlat, IVFPQ, HNSW
+  nlist: 100  # Number of clusters for IVF
+  nprobe: 10  # Number of clusters to search
+  use_gpu: false
+  metric: inner_product  # inner_product, l2
