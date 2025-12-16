@@ -151,14 +151,28 @@ def main(cfg: DictConfig) -> float:
         max_grad_norm=cfg.trainer.gradient_clip.max_norm,
         checkpoint_dir=cfg.paths.checkpoint_dir,
         reg_weight=cfg.trainer.get("reg_weight", 1e-5),
+        eval_every_n_epochs=cfg.trainer.get("eval_every_n_epochs", 5),
         seed=cfg.seed,
     )
+    
+    # Setup evaluator for validation metrics
+    val_evaluator = Evaluator(
+        k_values=[5, 10, 20],
+        metrics=["precision", "recall", "ndcg", "hit_rate"],
+    )
+    
+    # Get validation ground truth
+    val_ground_truth, val_train_items = data_module.get_evaluation_data("val")
     
     trainer = Trainer(
         model=model,
         config=trainer_config,
         tracker=tracker,
         device=str(device),
+        evaluator=val_evaluator,
+        val_ground_truth=val_ground_truth,
+        val_train_items=val_train_items,
+        num_items=data_module.num_items,
     )
     
     # Get data loaders
@@ -168,7 +182,9 @@ def main(cfg: DictConfig) -> float:
         train_loader = data_module.get_bpr_dataloader("train")
         val_loader = data_module.get_bpr_dataloader("val")
         edge_index = data_module.edge_index.to(device)
-        edge_weight = data_module.edge_weights.to(device)
+        # Don't pass precomputed edge_weight - let LightGCNConv compute normalization itself
+        # This avoids double-normalization bug
+        edge_weight = None
     else:
         train_loader = data_module.get_ncf_dataloader("train")
         val_loader = data_module.get_ncf_dataloader("val")
