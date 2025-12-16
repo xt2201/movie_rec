@@ -2,9 +2,9 @@
 name: default
 
 # Training
-max_epochs: 100
-learning_rate: 0.001
-weight_decay: 1.0e-5
+max_epochs: 300
+learning_rate: 0.005  # Paper uses 0.005
+weight_decay: 0.0  # Set to 0, use BPR reg_weight instead
 batch_size: ${data.dataloader.batch_size}
 
 # Optimizer
@@ -24,7 +24,7 @@ scheduler:
 # Early stopping
 early_stopping:
   enabled: true
-  patience: 10
+  patience: 20
   min_delta: 0.0001
   monitor: val_loss
   mode: min
