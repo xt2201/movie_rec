@@ -178,16 +178,16 @@ def main(cfg: DictConfig) -> float:
     # Get data loaders
     model_type = cfg.model.get("type", "graph")
     
+    # All models use BPR-style dataloader (user, pos_item, neg_item)
+    train_loader = data_module.get_bpr_dataloader("train")
+    val_loader = data_module.get_bpr_dataloader("val")
+    
     if model_type == "graph":
-        train_loader = data_module.get_bpr_dataloader("train")
-        val_loader = data_module.get_bpr_dataloader("val")
         edge_index = data_module.edge_index.to(device)
         # Don't pass precomputed edge_weight - let LightGCNConv compute normalization itself
         # This avoids double-normalization bug
         edge_weight = None
     else:
-        train_loader = data_module.get_ncf_dataloader("train")
-        val_loader = data_module.get_ncf_dataloader("val")
         edge_index = None
         edge_weight = None
     
@@ -233,6 +233,12 @@ def main(cfg: DictConfig) -> float:
     model_path = Path(cfg.paths.checkpoint_dir) / "final_model.pt"
     model.save(model_path)
     console.print(f"[green]✓[/green] Saved model to {model_path}")
+    
+    # Save results as JSON for benchmark integration
+    import json
+    results_path = Path(cfg.paths.checkpoint_dir) / "results.json"
+    with open(results_path, "w") as f:
+        json.dump(results, f, indent=2)
     
     console.rule("[bold green]Training Complete![/bold green]")
     

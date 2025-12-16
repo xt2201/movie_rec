@@ -159,8 +159,12 @@ wandb/
 *.pickle
 
 # Data files (keep structure, ignore large files)
+data/
 data/movielens-small/*.json
 !data/movielens-small/.gitkeep
+
+# Results
+results/
 
 # Hydra outputs
 outputs/

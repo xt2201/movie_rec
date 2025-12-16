@@ -6,13 +6,16 @@ A production-ready movie recommendation system combining multiple state-of-the-a
 
 ### Recommendation Approaches
 
-| Model | Type | Description |
-|-------|------|-------------|
-| **LightGCN** | Graph Neural Network | Simplified GCN that learns user/item embeddings through graph convolution |
-| **NGCF** | Graph Neural Network | Neural Graph Collaborative Filtering with feature transformation |
-| **NCF** | Neural Network | Neural Collaborative Filtering combining GMF and MLP |
-| **GMF** | Neural Network | Generalized Matrix Factorization |
-| **MLP** | Neural Network | Multi-Layer Perceptron for learning non-linear interactions |
+| Model | Type | Description | NDCG@10 |
+|-------|------|-------------|---------|
+| **LightGCN** | Graph Neural Network | Simplified GCN that learns user/item embeddings through graph convolution | 0.1165 |
+| **NGCF** | Graph Neural Network | Neural Graph Collaborative Filtering with feature transformation | 0.1589 |
+| **NCF** | Neural Network | Neural Collaborative Filtering combining GMF and MLP | 0.1514 |
+| **SVD** | Matrix Factorization | BPR-optimized Matrix Factorization using PyTorch GPU | 0.1150 |
+| **ItemCF** | Collaborative Filtering | Item-based KNN with cosine similarity | **0.1824** |
+| **Hybrid** | Ensemble | Weighted score fusion of NCF + ItemCF | 0.1749 |
+
+*Benchmark on MovieLens-1M dataset with 1 training epoch.*
 
 ### Infrastructure
 
@@ -141,13 +144,48 @@ MLFLOW_TRACKING_URI=./mlruns
 
 ### Download Data
 
-Download the MovieLens Small dataset and place it in `data/movielens-small/`:
+#### MovieLens Small (100K ratings)
 
 ```bash
 wget https://files.grouplens.org/datasets/movielens/ml-latest-small.zip
 unzip ml-latest-small.zip
 mv ml-latest-small/* data/movielens-small/
 ```
+
+#### MovieLens 1M (1M ratings) - Recommended for benchmarking
+
+```bash
+# Using the provided script
+./scripts/download_ml1m.sh
+
+# Or manually
+wget https://files.grouplens.org/datasets/movielens/ml-1m.zip
+unzip ml-1m.zip -d data/
+python scripts/convert_ml1m.py
+```
+
+### Multi-Model Benchmark
+
+Train all models and compare results:
+
+```bash
+# Train all supported models on MovieLens-1M
+python scripts/benchmark.py --data movielens_1m --epochs 100
+
+# Train specific models
+python scripts/benchmark.py --models lightgcn,ngcf,ncf --epochs 100
+
+# Quick test with fewer epochs
+python scripts/benchmark.py --models lightgcn --epochs 10
+
+# Disable wandb/mlflow logging
+python scripts/benchmark.py --models all --no-wandb --no-mlflow
+```
+
+**Output:**
+- Checkpoints saved to `checkpoints/{model_name}/`
+- Results CSV: `results/benchmark_results.csv`
+- Comparison table: `results/comparison_table.md`
 
 ### Training
 
@@ -212,22 +250,13 @@ python -m src.train model=ncf \
 
 #### 🔷 Traditional Methods
 
-**SVD** - Singular Value Decomposition (using Surprise):
+**SVD (BPR-MF)** - Matrix Factorization with BPR loss (PyTorch GPU):
 ```bash
-# Basic training
-python -m src.train model=svd
+# SVD is trained via benchmark.py with GPU acceleration
+python scripts/benchmark.py --models svd --epochs 1
 
-# Custom factors and regularization
-python -m src.train model=svd \
-    model.n_factors=100 \
-    model.n_epochs=20 \
-    model.lr_all=0.005 \
-    model.reg_all=0.02
-
-# Unbiased SVD
-python -m src.train model=svd \
-    model.biased=false \
-    model.n_factors=150
+# Parameters in benchmark.py:
+# n_factors=64, n_epochs=100, lr=0.05, batch_size=65536
 ```
 
 **Item-based Collaborative Filtering**:

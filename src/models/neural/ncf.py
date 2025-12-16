@@ -299,7 +299,13 @@ class NCF(BaseRecommender):
         Compute BCE loss for NCF.
         
         Uses BCEWithLogitsLoss for numerical stability.
+        Compatible with BPR-style trainer (user, pos_item, neg_item).
         """
+        # Ensure indices are Long type for embedding lookup
+        users = users.long()
+        pos_items = pos_items.long()
+        neg_items = neg_items.long()
+        
         # Positive samples
         pos_logits = self.model(users, pos_items).squeeze()
         pos_labels = torch.ones_like(pos_logits)

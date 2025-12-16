@@ -33,6 +33,8 @@ class HybridEnsemble(BaseRecommender):
         fusion_method: str = "weighted_average",
         learn_weights: bool = False,
         device: str = "cpu",
+        edge_index: torch.Tensor | None = None,
+        edge_weight: torch.Tensor | None = None,
     ):
         """
         Initialize hybrid ensemble.
@@ -45,6 +47,8 @@ class HybridEnsemble(BaseRecommender):
             fusion_method: How to combine scores ("weighted_average", "rrf", "borda")
             learn_weights: Whether to learn weights via backprop
             device: Device for computations
+            edge_index: Graph edge index for graph-based models
+            edge_weight: Graph edge weights
         """
         super().__init__(num_users, num_items, device)
         
@@ -53,6 +57,17 @@ class HybridEnsemble(BaseRecommender):
         self.fusion_method = fusion_method
         self.learn_weights = learn_weights
         
+        # Store edge_index for graph models
+        self.edge_index = edge_index
+        self.edge_weight = edge_weight
+        
+        # Pre-computed embeddings for graph models (computed once)
+        self._graph_embeddings: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        
+        # Pre-compute embeddings for graph models if edge_index provided
+        if edge_index is not None and models:
+            self._precompute_graph_embeddings()
+        
         # Learnable weights
         if learn_weights and models:
             self.weight_params = nn.Parameter(
@@ -60,6 +75,21 @@ class HybridEnsemble(BaseRecommender):
             )
         else:
             self.weight_params = None
+    
+    def _precompute_graph_embeddings(self) -> None:
+        """Pre-compute embeddings from graph models to avoid repeated forward passes."""
+        if self.edge_index is None:
+            return
+            
+        for name, model in self.models.items():
+            model_type = type(model).__name__
+            if model_type in ['LightGCN', 'NGCF']:
+                try:
+                    with torch.no_grad():
+                        user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
+                        self._graph_embeddings[name] = (user_emb, item_emb)
+                except Exception as e:
+                    print(f"Warning: Could not pre-compute embeddings for {name}: {e}")
     
     def add_model(
         self,
@@ -81,12 +111,24 @@ class HybridEnsemble(BaseRecommender):
         # Normalize weights
         total = sum(self.weights.values())
         self.weights = {k: v / total for k, v in self.weights.items()}
+        
+        # Pre-compute embeddings if graph model
+        model_type = type(model).__name__
+        if model_type in ['LightGCN', 'NGCF'] and self.edge_index is not None:
+            try:
+                with torch.no_grad():
+                    user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
+                    self._graph_embeddings[name] = (user_emb, item_emb)
+            except Exception as e:
+                print(f"Warning: Could not compute embeddings for {name}: {e}")
     
     def remove_model(self, name: str) -> None:
         """Remove a model from the ensemble."""
         if name in self.models:
             del self.models[name]
             del self.weights[name]
+            if name in self._graph_embeddings:
+                del self._graph_embeddings[name]
             
             # Renormalize
             if self.weights:
@@ -141,24 +183,92 @@ class HybridEnsemble(BaseRecommender):
         weights: dict[str, float],
         **kwargs,
     ) -> torch.Tensor:
-        """Weighted average of model scores."""
-        combined_scores = None
+        """
+        Score-normalized weighted average fusion.
+        
+        Computes scores from each model, normalizes to [0, 1], then combines.
+        Uses pre-computed embeddings for graph models.
+        """
+        num_users = len(users)
+        device = users.device
+        
+        # Initialize
+        combined_scores = torch.zeros((num_users, self.num_items), device=device)
+        total_weight = 0.0
+        models_used = 0
         
         for name, model in self.models.items():
             weight = weights.get(name, 0)
             if weight == 0:
                 continue
             
-            with torch.no_grad():
-                scores = model.forward(users, items, **kwargs)
-            
-            # Normalize scores to [0, 1]
-            scores = (scores - scores.min()) / (scores.max() - scores.min() + 1e-8)
-            
-            if combined_scores is None:
-                combined_scores = weight * scores
-            else:
-                combined_scores = combined_scores + weight * scores
+            try:
+                with torch.no_grad():
+                    model_type = type(model).__name__
+                    
+                    if model_type in ['LightGCN', 'NGCF']:
+                        # Use pre-computed embeddings for graph models
+                        if name in self._graph_embeddings:
+                            user_emb, item_emb = self._graph_embeddings[name]
+                            user_emb_batch = user_emb[users]
+                            scores = torch.matmul(user_emb_batch, item_emb.T)
+                        elif self.edge_index is not None:
+                            # Compute on-the-fly if not pre-computed
+                            user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
+                            user_emb_batch = user_emb[users]
+                            scores = torch.matmul(user_emb_batch, item_emb.T)
+                        else:
+                            print(f"Warning: {name} requires edge_index, skipping")
+                            continue
+                    
+                    elif model_type == 'NCF':
+                        # NCF - compute scores for all items per user
+                        all_items = torch.arange(self.num_items, device=device)
+                        batch_scores = []
+                        for user in users:
+                            user_exp = user.unsqueeze(0).expand(self.num_items)
+                            score = torch.sigmoid(model.forward(user_exp, all_items).squeeze())
+                            batch_scores.append(score)
+                        scores = torch.stack(batch_scores)
+                    
+                    elif model_type == 'ItemBasedCF':
+                        # ItemCF - uses its own forward
+                        scores = model.forward(users)
+                    
+                    elif model_type == 'SVDRecommender':
+                        # SVD - uses its own forward
+                        scores = model.forward(users)
+                    
+                    else:
+                        # Generic fallback
+                        try:
+                            scores = model.forward(users, items, **kwargs)
+                        except Exception:
+                            continue
+                    
+                    # Normalize scores to [0, 1]
+                    if scores.numel() > 0:
+                        scores_min = scores.min()
+                        scores_max = scores.max()
+                        if scores_max > scores_min:
+                            scores = (scores - scores_min) / (scores_max - scores_min)
+                        else:
+                            scores = torch.zeros_like(scores)
+                    
+                    combined_scores += weight * scores
+                    total_weight += weight
+                    models_used += 1
+                    
+            except Exception as e:
+                print(f"Warning: Could not compute scores from {name}: {e}")
+                continue
+        
+        if models_used == 0:
+            print("Warning: No models contributed to hybrid scores")
+        
+        # Normalize by total weight
+        if total_weight > 0:
+            combined_scores /= total_weight
         
         return combined_scores
     
@@ -173,32 +283,16 @@ class HybridEnsemble(BaseRecommender):
         """
         Reciprocal Rank Fusion (RRF).
         
-        RRF_score(item) = sum over models of: weight / (k + rank(item))
+        Uses the same score computation as weighted average, then converts to RRF.
         """
-        # Get rankings from each model
-        all_rankings = []
-        model_weights = []
+        # Get scores using weighted average method
+        scores = self._weighted_average(users, items, weights, **kwargs)
         
-        for name, model in self.models.items():
-            weight = weights.get(name, 0)
-            if weight == 0:
-                continue
-            
-            with torch.no_grad():
-                scores = model.forward(users, items, **kwargs)
-            
-            # Convert scores to rankings
-            rankings = torch.argsort(torch.argsort(scores, descending=True))
-            all_rankings.append(rankings)
-            model_weights.append(weight)
+        # Convert to RRF scores
+        rankings = torch.argsort(torch.argsort(scores, dim=1, descending=True), dim=1)
+        rrf_scores = 1.0 / (k + rankings.float())
         
-        # Compute RRF scores
-        combined_scores = torch.zeros_like(all_rankings[0], dtype=torch.float)
-        
-        for rankings, weight in zip(all_rankings, model_weights):
-            combined_scores = combined_scores + weight / (k + rankings.float())
-        
-        return combined_scores
+        return rrf_scores
     
     def _borda_count(
         self,
@@ -210,34 +304,16 @@ class HybridEnsemble(BaseRecommender):
         """
         Borda count fusion.
         
-        Each model assigns points based on ranking (n - rank).
+        Uses the same score computation as weighted average, then converts to Borda.
         """
-        all_rankings = []
-        model_weights = []
+        # Get scores using weighted average method
+        scores = self._weighted_average(users, items, weights, **kwargs)
         
-        for name, model in self.models.items():
-            weight = weights.get(name, 0)
-            if weight == 0:
-                continue
-            
-            with torch.no_grad():
-                scores = model.forward(users, items, **kwargs)
-            
-            # Convert scores to rankings (lower rank = better)
-            rankings = torch.argsort(torch.argsort(scores, descending=True))
-            all_rankings.append(rankings)
-            model_weights.append(weight)
+        # Convert to Borda scores
+        rankings = torch.argsort(torch.argsort(scores, dim=1, descending=True), dim=1)
+        borda_scores = (self.num_items - rankings.float())
         
-        # Compute Borda scores
-        n_items = all_rankings[0].shape[-1]
-        combined_scores = torch.zeros_like(all_rankings[0], dtype=torch.float)
-        
-        for rankings, weight in zip(all_rankings, model_weights):
-            # Borda points = n - rank
-            borda_points = n_items - rankings.float()
-            combined_scores = combined_scores + weight * borda_points
-        
-        return combined_scores
+        return borda_scores
     
     def compute_loss(
         self,
@@ -272,22 +348,35 @@ class HybridEnsemble(BaseRecommender):
     def recommend(
         self,
         users: torch.Tensor,
-        top_k: int = 10,
+        k: int = 10,
+        exclude_items: dict[int, set[int]] | None = None,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Generate top-K recommendations.
         
         Args:
             users: User indices
-            top_k: Number of recommendations
+            k: Number of recommendations
+            exclude_items: Dict mapping user_idx -> set of item_idx to exclude
             
         Returns:
-            Top-K item indices for each user
+            Tuple of (top-K scores, top-K item indices) for each user
         """
         scores = self.forward(users, **kwargs)
-        _, indices = torch.topk(scores, top_k, dim=-1)
-        return indices
+        
+        # Exclude items if specified
+        if exclude_items is not None:
+            for i, user_id in enumerate(users.tolist()):
+                if user_id in exclude_items:
+                    for item_id in exclude_items[user_id]:
+                        if item_id < self.num_items:
+                            scores[i, item_id] = float("-inf")
+        
+        # Ensure k doesn't exceed num_items
+        k = min(k, self.num_items)
+        top_scores, indices = torch.topk(scores, k, dim=-1)
+        return top_scores, indices
     
     def save(self, path: Path) -> None:
         """Save ensemble configuration."""

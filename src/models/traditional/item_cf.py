@@ -103,6 +103,8 @@ class ItemBasedCF(BaseRecommender):
         """
         Compute prediction scores.
         
+        For implicit feedback: score(u, i) = sum of sim(i, j) for j in user's items
+        
         Args:
             users: User indices
             items: Item indices (if None, score all items)
@@ -115,16 +117,17 @@ class ItemBasedCF(BaseRecommender):
         
         users_np = users.cpu().numpy()
         
-        # Get user's interaction vector
+        # Get user's interaction vector (binary: 1 if interacted, 0 otherwise)
         user_vectors = self.user_item_matrix[users_np].toarray()
+        # Binarize to ensure implicit feedback
+        user_binary = (user_vectors > 0).astype(np.float32)
         
         if items is not None:
             items_np = items.cpu().numpy()
-            # Point-wise predictions
+            # Point-wise predictions using top-k neighbors
             scores = []
             for i, (u, item) in enumerate(zip(users_np, items_np)):
-                user_vec = user_vectors[i]
-                # Get k most similar items that user has interacted with
+                user_vec = user_binary[i]
                 sim = self.item_similarity[item]
                 interacted = np.where(user_vec > 0)[0]
                 
@@ -132,31 +135,48 @@ class ItemBasedCF(BaseRecommender):
                     scores.append(0.0)
                     continue
                 
-                # Get top-k neighbors among interacted items
+                # Get top-k similar items among user's interacted items
                 neighbor_sims = sim[interacted]
                 k = min(self.k_neighbors, len(interacted))
-                top_k_idx = np.argsort(neighbor_sims)[-k:]
+                top_k_idx = np.argpartition(neighbor_sims, -k)[-k:]
                 
-                # Weighted average
-                weights = neighbor_sims[top_k_idx]
-                if np.sum(weights) > 0:
-                    score = np.sum(weights * user_vec[interacted[top_k_idx]]) / np.sum(np.abs(weights))
-                else:
-                    score = 0.0
+                # Score = sum of top-k similarities
+                score = np.sum(neighbor_sims[top_k_idx])
                 scores.append(score)
             
-            return torch.tensor(scores, device=self.device)
+            return torch.tensor(scores, device=self.device, dtype=torch.float32)
         else:
             # Score all items for each user
-            # Efficient matrix multiplication
-            scores = np.dot(user_vectors, self.item_similarity.T)
+            # For each (user, item): score = sum of sim(item, j) for j in top-k similar items user has
+            batch_size = len(users_np)
+            all_scores = np.zeros((batch_size, self.num_items), dtype=np.float32)
             
-            # Normalize by sum of similarities
-            denom = np.sum(np.abs(self.item_similarity), axis=1)
-            denom[denom == 0] = 1  # Avoid division by zero
-            scores = scores / denom
+            for i in range(batch_size):
+                interacted = np.where(user_binary[i] > 0)[0]
+                
+                if len(interacted) == 0:
+                    continue
+                
+                k = min(self.k_neighbors, len(interacted))
+                
+                # For each item, get similarity to user's interacted items
+                # sim_subset shape: (num_items, num_interacted)
+                sim_subset = self.item_similarity[:, interacted]
+                
+                # For each candidate item, sum top-k similarities
+                if k >= len(interacted):
+                    # Use all interacted items
+                    all_scores[i] = np.sum(sim_subset, axis=1)
+                else:
+                    # Use only top-k most similar for each item
+                    # Partition to get top-k indices, then sum those
+                    top_k_indices = np.argpartition(sim_subset, -k, axis=1)[:, -k:]
+                    # Gather top-k values
+                    row_idx = np.arange(self.num_items)[:, np.newaxis]
+                    top_k_sims = sim_subset[row_idx, top_k_indices]
+                    all_scores[i] = np.sum(top_k_sims, axis=1)
             
-            return torch.tensor(scores, device=self.device)
+            return torch.tensor(all_scores, device=self.device, dtype=torch.float32)
     
     def compute_loss(
         self,
@@ -183,7 +203,7 @@ class ItemBasedCF(BaseRecommender):
         top_k: int = 10,
         exclude_interacted: bool = True,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Generate top-K recommendations.
         
@@ -193,7 +213,7 @@ class ItemBasedCF(BaseRecommender):
             exclude_interacted: Whether to exclude already interacted items
             
         Returns:
-            Top-K item indices for each user
+            Tuple of (top-K scores, top-K item indices) for each user
         """
         scores = self.forward(users)
         
@@ -205,8 +225,8 @@ class ItemBasedCF(BaseRecommender):
             scores[user_vectors > 0] = -np.inf
             scores = torch.tensor(scores, device=self.device)
         
-        _, indices = torch.topk(scores, top_k, dim=-1)
-        return indices
+        top_scores, indices = torch.topk(scores, top_k, dim=-1)
+        return top_scores, indices
     
     def get_similar_items(
         self,
