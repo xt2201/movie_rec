@@ -284,9 +284,11 @@ class ExperimentTracker:
     def set_summary(self, key: str, value: Any) -> None:
         """Set a summary metric (final value)."""
         if self.use_mlflow:
-            mlflow.log_metric(f"final_{key}", value)
+            # Replace special characters in metric name for MLflow compatibility
+            clean_key = key.replace("@", "_at_")
+            mlflow.log_metric(f"final_{clean_key}", value)
         
-        if self.use_wandb:
+        if self.use_wandb and wandb.run is not None:
             wandb.run.summary[key] = value
     
     def log_table(
