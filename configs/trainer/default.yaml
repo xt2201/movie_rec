@@ -44,6 +44,7 @@ checkpoint:
 
 # Validation
 val_check_interval: 1  # Validate every N epochs
+eval_every_n_epochs: 5  # Run full ranking evaluation (ndcg, recall, etc.) every N epochs
 
 # Mixed precision training
 mixed_precision: false

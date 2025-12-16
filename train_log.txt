@@ -1,0 +1,271 @@
+────────── Movie Recommendation Training ──────────
+╭───────────────── Configuration ─────────────────╮
+│ model:                                          │
+│   name: lightgcn                                │
+│   type: graph                                   │
+│   embedding_dim: 64                             │
+│   num_layers: 3                                 │
+│   dropout: 0.0                                  │
+│   add_self_loops: False                         │
+│   normalize: True                               │
+│   loss_type: bpr                                │
+│ data:                                           │
+│   name: movielens_small                         │
+│   files: {'ratings':                            │
+│ 'movielens-small/ratings.csv', 'movies':        │
+│ 'movielens-small/movies.csv', 'links':          │
+│ 'movielens-small/links.csv', 'tags':            │
+│ 'movielens-small/tags.csv'}                     │
+│   preprocessing: {'min_rating': 3.0,            │
+│ 'min_user_interactions': 5,                     │
+│ 'min_item_interactions': 5}                     │
+│   split: {'strategy': 'random', 'train_ratio':  │
+│ 0.8, 'val_ratio': 0.1, 'test_ratio': 0.1}       │
+│   temporal: {'timestamp_col': 'timestamp'}      │
+│   leave_one_out: {'num_test_items': 1,          │
+│ 'num_val_items': 1}                             │
+│   negative_sampling: {'num_negatives': 4,       │
+│ 'strategy': 'uniform'}                          │
+│   dataloader: {'batch_size': 1024,              │
+│ 'num_workers': 4, 'pin_memory': True,           │
+│ 'shuffle': True}                                │
+│   graph: {'undirected': True, 'add_self_loops': │
+│ False}                                          │
+│ trainer:                                        │
+│   name: default                                 │
+│   max_epochs: 2                                 │
+│   learning_rate: 0.001                          │
+│   weight_decay: 1e-05                           │
+│   batch_size: 1024                              │
+│   optimizer: {'name': 'adam', 'betas': [0.9,    │
+│ 0.999], 'eps': 1e-08}                           │
+│   scheduler: {'name': 'reduce_on_plateau',      │
+│ 'mode': 'min', 'factor': 0.5, 'patience': 5,    │
+│ 'min_lr': 1e-06}                                │
+│   early_stopping: {'enabled': True, 'patience': │
+│ 10, 'min_delta': 0.0001, 'monitor': 'val_loss', │
+│ 'mode': 'min'}                                  │
+│   gradient_clip: {'enabled': True, 'max_norm':  │
+│ 1.0}                                            │
+│   checkpoint: {'enabled': True, 'save_top_k':   │
+│ 3, 'monitor': 'val_loss', 'mode': 'min',        │
+│ 'save_last': True}                              │
+│   val_check_interval: 1                         │
+│   mixed_precision: False                        │
+│   detect_anomaly: False                         │
+│ logger:                                         │
+│   name: wandb_mlflow                            │
+│   use_mlflow: True                              │
+│   use_wandb: True                               │
+│   use_rich: True                                │
+│   wandb: {'project': 'movie-rec', 'entity':     │
+│ None, 'name': 'lightgcn_2025-12-16_15-35-24',   │
+│ 'tags': ['lightgcn', 'movielens_small'],        │
+│ 'notes': None, 'mode': 'online', 'log_model':   │
+│ True, 'watch_model': True, 'watch_log':         │
+│ 'gradients', 'watch_freq': 100}                 │
+│   mlflow: {'tracking_uri':                      │
+│ '/home/thanhnx/movie_rec/mlruns',               │
+│ 'experiment_name': 'movie_recommendation',      │
+│ 'run_name': 'lightgcn_2025-12-16_15-35-24',     │
+│ 'log_model': True, 'register_model': False,     │
+│ 'registered_model_name': 'lightgcn'}            │
+│   rich: {'show_progress': True, 'show_table':   │
+│ True, 'refresh_rate': 10}                       │
+│   log_every_n_steps: 50                         │
+│   log_every_n_epochs: 1                         │
+│   metrics: {'train': ['loss', 'learning_rate'], │
+│ 'val': ['loss', 'precision_at_10',              │
+│ 'recall_at_10', 'ndcg_at_10',                   │
+│ 'hit_rate_at_10']}                              │
+│ experiment_name: movie_recommendation           │
+│ project_name: movie-rec                         │
+│ run_name: lightgcn_2025-12-16_15-35-24          │
+│ seed: 42                                        │
+│ device: cuda                                    │
+│ paths:                                          │
+│   data_dir: /home/thanhnx/movie_rec/data        │
+│   output_dir: /home/thanhnx/movie_rec/outputs   │
+│   checkpoint_dir:                               │
+│ /home/thanhnx/movie_rec/checkpoints             │
+│   mlflow_dir: /home/thanhnx/movie_rec/mlruns    │
+╰─────────────────────────────────────────────────╯
+
+Using device: cuda
+────────────────── Loading Data ───────────────────
+✓ Loaded 608 users, 3,012 items
+✓ Train: 57,921 interactions
+✓ Val: 7,240 interactions
+✓ Test: 7,241 interactions
+───────────────── Building Model ──────────────────
+✓ Built LightGCN(num_users=608, num_items=3012, 
+embedding_dim=64, params=231,680)
+──────────────────── Training ─────────────────────
+/home/thanhnx/.local/lib/python3.13/site-packages/mlflow/tracking/_tracking_service/utils.py:177: FutureWarning: The filesystem tracking backend (e.g., './mlruns') will be deprecated in February 2026. Consider transitioning to a database backend (e.g., 'sqlite:///mlflow.db') to take advantage of the latest MLflow features. See https://github.com/mlflow/mlflow/issues/18534 for more details and migration guidance.
+  return FileStore(store_uri, store_uri)
+wandb: Currently logged in as: xt2201-vht (xt2201-vht-hust) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run 32965dra
+wandb: Tracking run with wandb version 0.23.0
+wandb: Run data is saved locally in /home/thanhnx/movie_rec/wandb/run-20251216_153527-32965dra
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run lightgcn_2025-12-16_15-35-24
+wandb: ⭐️ View project at https://wandb.ai/xt2201-vht-hust/movie-rec
+wandb: 🚀 View run at https://wandb.ai/xt2201-vht-hust/movie-rec/runs/32965dra
+╭─────── Experiment: movie_recommendation ────────╮
+│ model:                                          │
+│   name: lightgcn                                │
+│   type: graph                                   │
+│   embedding_dim: 64                             │
+│   num_layers: 3                                 │
+│   dropout: 0.0                                  │
+│   add_self_loops: False                         │
+│   normalize: True                               │
+│   loss_type: bpr                                │
+│ data:                                           │
+│   name: movielens_small                         │
+│   files: {'ratings':                            │
+│ 'movielens-small/ratings.csv', 'movies':        │
+│ 'movielens-small/movies.csv', 'links':          │
+│ 'movielens-small/links.csv', 'tags':            │
+│ 'movielens-small/tags.csv'}                     │
+│   preprocessing: {'min_rating': 3.0,            │
+│ 'min_user_interactions': 5,                     │
+│ 'min_item_interactions': 5}                     │
+│   split: {'strategy': 'random', 'train_ratio':  │
+│ 0.8, 'val_ratio': 0.1, 'test_ratio': 0.1}       │
+│   temporal: {'timestamp_col': 'timestamp'}      │
+│   leave_one_out: {'num_test_items': 1,          │
+│ 'num_val_items': 1}                             │
+│   negative_sampling: {'num_negatives': 4,       │
+│ 'strategy': 'uniform'}                          │
+│   dataloader: {'batch_size': 1024,              │
+│ 'num_workers': 4, 'pin_memory': True,           │
+│ 'shuffle': True}                                │
+│   graph: {'undirected': True, 'add_self_loops': │
+│ False}                                          │
+│ trainer:                                        │
+│   name: default                                 │
+│   max_epochs: 2                                 │
+│   learning_rate: 0.001                          │
+│   weight_decay: 1e-05                           │
+│   batch_size: 1024                              │
+│   optimizer: {'name': 'adam', 'betas': [0.9,    │
+│ 0.999], 'eps': 1e-08}                           │
+│   scheduler: {'name': 'reduce_on_plateau',      │
+│ 'mode': 'min', 'factor': 0.5, 'patience': 5,    │
+│ 'min_lr': 1e-06}                                │
+│   early_stopping: {'enabled': True, 'patience': │
+│ 10, 'min_delta': 0.0001, 'monitor': 'val_loss', │
+│ 'mode': 'min'}                                  │
+│   gradient_clip: {'enabled': True, 'max_norm':  │
+│ 1.0}                                            │
+│   checkpoint: {'enabled': True, 'save_top_k':   │
+│ 3, 'monitor': 'val_loss', 'mode': 'min',        │
+│ 'save_last': True}                              │
+│   val_check_interval: 1                         │
+│   mixed_precision: False                        │
+│   detect_anomaly: False                         │
+│ logger:                                         │
+│   name: wandb_mlflow                            │
+│   use_mlflow: True                              │
+│   use_wandb: True                               │
+│   use_rich: True                                │
+│   wandb: {'project': 'movie-rec', 'entity':     │
+│ None, 'name': 'lightgcn_2025-12-16_15-35-24',   │
+│ 'tags': ['lightgcn', 'movielens_small'],        │
+│ 'notes': None, 'mode': 'online', 'log_model':   │
+│ True, 'watch_model': True, 'watch_log':         │
+│ 'gradients', 'watch_freq': 100}                 │
+│   mlflow: {'tracking_uri':                      │
+│ '/home/thanhnx/movie_rec/mlruns',               │
+│ 'experiment_name': 'movie_recommendation',      │
+│ 'run_name': 'lightgcn_2025-12-16_15-35-24',     │
+│ 'log_model': True, 'register_model': False,     │
+│ 'registered_model_name': 'lightgcn'}            │
+│   rich: {'show_progress': True, 'show_table':   │
+│ True, 'refresh_rate': 10}                       │
+│   log_every_n_steps: 50                         │
+│   log_every_n_epochs: 1                         │
+│   metrics: {'train': ['loss', 'learning_rate'], │
+│ 'val': ['loss', 'precision_at_10',              │
+│ 'recall_at_10', 'ndcg_at_10',                   │
+│ 'hit_rate_at_10']}                              │
+│ experiment_name: movie_recommendation           │
+│ project_name: movie-rec                         │
+│ run_name: lightgcn_2025-12-16_15-35-24          │
+│ seed: 42                                        │
+│ device: cuda                                    │
+│ paths:                                          │
+│   data_dir: /home/thanhnx/movie_rec/data        │
+│   output_dir: /home/thanhnx/movie_rec/outputs   │
+│   checkpoint_dir:                               │
+│ /home/thanhnx/movie_rec/checkpoints             │
+│   mlflow_dir: /home/thanhnx/movie_rec/mlruns    │
+╰─────────────────────────────────────────────────╯
+
+╭───────────────── Model Summary ─────────────────╮
+│ Model: LightGCN                                 │
+│ Parameters: 231,680                             │
+│ Trainable: 231,680                              │
+│ Users: 608                                      │
+│ Items: 3,012                                    │
+│ Embedding Dim: 64                               │
+╰─────────────────────────────────────────────────╯
+
+        Epoch 0 Results         
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Metric ┃  Train ┃ Validation ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━┩
+│ loss   │ 0.6866 │     0.6668 │
+└────────┴────────┴────────────┘
+
+        Epoch 1 Results         
+┏━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Metric ┃  Train ┃ Validation ┃
+┡━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━┩
+│ loss   │ 0.6105 │     0.5522 │
+└────────┴────────┴────────────┘
+
+  Training ━━━━━━━━━━━━━━━━ 2/2 • 0:00:01 • 0:00:00
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json
+wandb: uploading history steps 0-1, summary, console lines 17-115
+wandb: 
+wandb: Run history:
+wandb: learning_rate ▁▁
+wandb:    train/loss █▁
+wandb:      val/loss █▁
+wandb: 
+wandb: Run summary:
+wandb: learning_rate 0.001
+wandb:    train/loss 0.61055
+wandb:      val/loss 0.5522
+wandb: 
+wandb: 🚀 View run lightgcn_2025-12-16_15-35-24 at: https://wandb.ai/xt2201-vht-hust/movie-rec/runs/32965dra
+wandb: ⭐️ View project at: https://wandb.ai/xt2201-vht-hust/movie-rec
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20251216_153527-32965dra/logs
+─────────────────── Evaluation ────────────────────
+Evaluating model...
+Evaluation:   0%|          | 0/3 [00:00<?, ?it/s]Evaluation:  33%|███▎      | 1/3 [00:00<00:00,  3.81it/s]Evaluation:  67%|██████▋   | 2/3 [00:00<00:00,  4.61it/s]Evaluation: 100%|██████████| 3/3 [00:00<00:00,  5.83it/s]
+   Evaluation Results    
+┏━━━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Metric       ┃  Value ┃
+┡━━━━━━━━━━━━━━╇━━━━━━━━┩
+│ hit_rate@10  │ 0.4395 │
+│ hit_rate@20  │ 0.5588 │
+│ hit_rate@5   │ 0.3322 │
+│ ndcg@10      │ 0.1025 │
+│ ndcg@20      │ 0.1125 │
+│ ndcg@5       │ 0.1007 │
+│ precision@10 │ 0.0741 │
+│ precision@20 │ 0.0597 │
+│ precision@5  │ 0.0876 │
+│ recall@10    │ 0.0855 │
+│ recall@20    │ 0.1321 │
+│ recall@5     │ 0.0533 │
+└──────────────┴────────┘
+✓ Saved model to 
+/home/thanhnx/movie_rec/checkpoints/final_model.pt
+─────────────── Training Complete! ────────────────

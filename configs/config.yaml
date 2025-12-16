@@ -15,7 +15,7 @@ run_name: ${model.name}_${now:%Y-%m-%d_%H-%M-%S}
 seed: 42
 
 # Device settings
-device: auto  # auto, cpu, cuda, mps
+device: cuda  # auto, cpu, cuda, mps
 
 # Paths (relative to hydra working dir)
 paths:

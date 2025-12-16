@@ -70,6 +70,8 @@ class Evaluator:
         edge_index: Optional[torch.Tensor] = None,
         edge_weight: Optional[torch.Tensor] = None,
         device: Optional[torch.device] = None,
+        user_emb: Optional[torch.Tensor] = None,
+        item_emb: Optional[torch.Tensor] = None,
     ) -> dict[str, float]:
         """
         Evaluate model on test data.
@@ -82,6 +84,8 @@ class Evaluator:
             edge_index: Graph edge index (for GNN models)
             edge_weight: Edge weights
             device: Device to use
+            user_emb: Precomputed user embeddings (to avoid recomputation)
+            item_emb: Precomputed item embeddings (to avoid recomputation)
             
         Returns:
             Dictionary of metric_name -> value
@@ -99,18 +103,16 @@ class Evaluator:
         
         max_k = max(self.k_values)
         
-        # Precompute embeddings for GNN models
-        user_emb = None
-        item_emb = None
-        
-        if hasattr(model, "forward") and edge_index is not None:
-            with torch.no_grad():
-                if edge_index is not None:
-                    edge_index = edge_index.to(device)
-                if edge_weight is not None:
-                    edge_weight = edge_weight.to(device)
-                
-                user_emb, item_emb = model.forward(edge_index, edge_weight)
+        # Use precomputed embeddings if provided, otherwise compute them
+        if user_emb is None or item_emb is None:
+            if hasattr(model, "forward") and edge_index is not None:
+                with torch.no_grad():
+                    if edge_index is not None:
+                        edge_index = edge_index.to(device)
+                    if edge_weight is not None:
+                        edge_weight = edge_weight.to(device)
+                    
+                    user_emb, item_emb = model.forward(edge_index, edge_weight)
         
         # Evaluate in batches
         all_predictions = []
@@ -148,23 +150,23 @@ class Evaluator:
         # Build ground truth dict with sequential indices
         gt_dict = {i: ground_truth[user] for i, user in enumerate(test_users)}
         
-        # Compute metrics
+        # Compute metrics (use _at_ instead of @ for MLflow compatibility)
         results = {}
         
         for k in self.k_values:
             preds_k = predictions[:, :k]
             
             if "precision" in self.metrics:
-                results[f"precision@{k}"] = batch_precision_at_k(preds_k, gt_dict, k)
+                results[f"precision_at_{k}"] = batch_precision_at_k(preds_k, gt_dict, k)
             
             if "recall" in self.metrics:
-                results[f"recall@{k}"] = batch_recall_at_k(preds_k, gt_dict, k)
+                results[f"recall_at_{k}"] = batch_recall_at_k(preds_k, gt_dict, k)
             
             if "ndcg" in self.metrics:
-                results[f"ndcg@{k}"] = batch_ndcg_at_k(preds_k, gt_dict, k)
+                results[f"ndcg_at_{k}"] = batch_ndcg_at_k(preds_k, gt_dict, k)
             
             if "hit_rate" in self.metrics:
-                results[f"hit_rate@{k}"] = batch_hit_rate_at_k(preds_k, gt_dict, k)
+                results[f"hit_rate_at_{k}"] = batch_hit_rate_at_k(preds_k, gt_dict, k)
         
         # Coverage
         if "coverage" in self.metrics:

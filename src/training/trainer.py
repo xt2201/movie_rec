@@ -16,10 +16,12 @@ from typing import Any, Callable, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.optim import Adam, AdamW, SGD, Optimizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR, StepLR
 from torch.utils.data import DataLoader
 
+from ..evaluation import Evaluator
 from ..utils.experiment_tracker import ExperimentTracker
 from ..utils.rich_logging import (
     RichLogger,
@@ -68,6 +70,7 @@ class TrainerConfig:
     
     # Validation
     val_check_interval: int = 1
+    eval_every_n_epochs: int = 5  # Run full ranking evaluation every N epochs
     
     # Regularization
     reg_weight: float = 1e-5
@@ -96,6 +99,10 @@ class Trainer:
         tracker: Optional[ExperimentTracker] = None,
         callbacks: Optional[list[Callback]] = None,
         device: Optional[str] = None,
+        evaluator: Optional[Evaluator] = None,
+        val_ground_truth: Optional[dict[int, set[int]]] = None,
+        val_train_items: Optional[dict[int, set[int]]] = None,
+        num_items: Optional[int] = None,
     ):
         """
         Initialize trainer.
@@ -106,11 +113,21 @@ class Trainer:
             tracker: Experiment tracker
             callbacks: List of callbacks
             device: Device to use
+            evaluator: Evaluator for ranking metrics during validation
+            val_ground_truth: Ground truth for validation (user_idx -> positive item_idx)
+            val_train_items: Training items to exclude during validation
+            num_items: Total number of items (for evaluation)
         """
         self.model = model
         self.config = config
         self.tracker = tracker
         self.callbacks = callbacks or []
+        
+        # Evaluation components
+        self.evaluator = evaluator
+        self.val_ground_truth = val_ground_truth
+        self.val_train_items = val_train_items
+        self.num_items = num_items
         
         # Set device
         if device is None or device == "auto":
@@ -299,10 +316,14 @@ class Trainer:
                 # Validation
                 val_metrics = {}
                 if val_loader is not None and epoch % self.config.val_check_interval == 0:
+                    # Check if we should run full ranking evaluation this epoch
+                    run_eval = (epoch % self.config.eval_every_n_epochs == 0)
                     val_metrics = self._validate(
                         val_loader,
                         edge_index,
                         edge_weight,
+                        epoch=epoch,
+                        run_ranking_eval=run_eval,
                     )
                     history["val_loss"].append(val_metrics.get("loss", 0))
                 
@@ -431,9 +452,17 @@ class Trainer:
         val_loader: DataLoader,
         edge_index: Optional[torch.Tensor],
         edge_weight: Optional[torch.Tensor],
+        epoch: int = 0,
+        run_ranking_eval: bool = False,
     ) -> dict[str, float]:
-        """Validate the model."""
+        """Validate the model with optional ranking metrics."""
         self.model.eval()
+        
+        # Cache embeddings once for both loss computation and ranking evaluation
+        user_emb = None
+        item_emb = None
+        if hasattr(self.model, "forward") and edge_index is not None:
+            user_emb, item_emb = self.model.forward(edge_index, edge_weight)
         
         total_loss = 0.0
         num_batches = len(val_loader)
@@ -447,17 +476,46 @@ class Trainer:
             else:
                 continue
             
-            loss = self.model.compute_loss(
-                users=users,
-                pos_items=pos_items,
-                neg_items=neg_items,
-                edge_index=edge_index,
-                edge_weight=edge_weight,
-            )
+            # Use cached embeddings for loss computation if available
+            if user_emb is not None and item_emb is not None:
+                # Compute loss using cached embeddings
+                user_emb_batch = user_emb[users]
+                pos_item_emb = item_emb[pos_items]
+                neg_item_emb = item_emb[neg_items]
+                
+                # BPR loss
+                pos_scores = (user_emb_batch * pos_item_emb).sum(dim=1)
+                neg_scores = (user_emb_batch * neg_item_emb).sum(dim=1)
+                loss = -torch.mean(F.logsigmoid(pos_scores - neg_scores))
+            else:
+                loss = self.model.compute_loss(
+                    users=users,
+                    pos_items=pos_items,
+                    neg_items=neg_items,
+                    edge_index=edge_index,
+                    edge_weight=edge_weight,
+                )
             
             total_loss += loss.item()
         
-        return {"loss": total_loss / num_batches if num_batches > 0 else 0}
+        metrics = {"loss": total_loss / num_batches if num_batches > 0 else 0}
+        
+        # Run full ranking evaluation if requested and evaluator is available
+        if run_ranking_eval and self.evaluator is not None and self.val_ground_truth is not None:
+            eval_results = self.evaluator.evaluate(
+                model=self.model,
+                ground_truth=self.val_ground_truth,
+                train_items=self.val_train_items or {},
+                num_items=self.num_items or 0,
+                edge_index=edge_index,
+                edge_weight=edge_weight,
+                device=self.device,
+                user_emb=user_emb,
+                item_emb=item_emb,
+            )
+            metrics.update(eval_results)
+        
+        return metrics
     
     def save_checkpoint(self, path: str | Path) -> None:
         """Save training checkpoint."""
