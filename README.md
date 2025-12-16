@@ -151,35 +151,220 @@ mv ml-latest-small/* data/movielens-small/
 
 ### Training
 
-Train a LightGCN model:
+#### 🔷 Graph Neural Networks
 
+**LightGCN** - Simplified Graph Convolution Network:
 ```bash
+# Basic training
 python -m src.train model=lightgcn
-```
 
-Train with custom hyperparameters:
-
-```bash
+# Custom hyperparameters
 python -m src.train model=lightgcn \
     model.embedding_dim=128 \
     model.num_layers=4 \
     trainer.max_epochs=100 \
     trainer.learning_rate=0.001
+
+# With specific settings
+python -m src.train model=lightgcn \
+    model.embedding_dim=64 \
+    model.num_layers=3 \
+    model.dropout=0.1 \
+    trainer.batch_size=2048 \
+    trainer.learning_rate=0.001
 ```
 
-Train NCF model:
-
+**NGCF** - Neural Graph Collaborative Filtering:
 ```bash
-python -m src.train model=ncf
+# Basic training
+python -m src.train model=ngcf
+
+# Custom architecture
+python -m src.train model=ngcf \
+    model.embedding_dim=64 \
+    model.hidden_dims=[64,64,64] \
+    model.dropout=0.1 \
+    model.message_dropout=0.1 \
+    trainer.learning_rate=0.0001
 ```
 
-### Hyperparameter Sweeps
+#### 🔷 Neural Collaborative Filtering
 
+**NCF** - Neural Collaborative Filtering (GMF + MLP):
+```bash
+# Basic training
+python -m src.train model=ncf
+
+# Custom architecture
+python -m src.train model=ncf \
+    model.mf_dim=64 \
+    model.mlp_layers=[128,64,32,16] \
+    model.dropout=0.2 \
+    model.num_negatives=4 \
+    trainer.learning_rate=0.001
+
+# With BCEWithLogits loss
+python -m src.train model=ncf \
+    model.loss_type=bce \
+    trainer.batch_size=1024 \
+    trainer.max_epochs=50
+```
+
+#### 🔷 Traditional Methods
+
+**SVD** - Singular Value Decomposition (using Surprise):
+```bash
+# Basic training
+python -m src.train model=svd
+
+# Custom factors and regularization
+python -m src.train model=svd \
+    model.n_factors=100 \
+    model.n_epochs=20 \
+    model.lr_all=0.005 \
+    model.reg_all=0.02
+
+# Unbiased SVD
+python -m src.train model=svd \
+    model.biased=false \
+    model.n_factors=150
+```
+
+**Item-based Collaborative Filtering**:
+```bash
+# Basic training (cosine similarity)
+python -m src.train model=item_cf
+
+# With different similarity metrics
+python -m src.train model=item_cf \
+    model.k=40 \
+    model.similarity=pearson
+
+# Adjusted similarity with more neighbors
+python -m src.train model=item_cf \
+    model.k=50 \
+    model.similarity=pearson_baseline \
+    model.shrinkage=100
+```
+
+#### 🔷 Hybrid Ensemble
+
+**Hybrid Ensemble** - Combines multiple models:
+```bash
+# Basic hybrid training
+python -m src.train model=hybrid_ensemble
+
+# Custom model combination
+python -m src.train model=hybrid_ensemble \
+    model.models=[ncf,item_cf] \
+    model.fusion_method=weighted_average
+
+# With learned weights
+python -m src.train model=hybrid_ensemble \
+    model.learn_weights=true \
+    model.fusion_method=rrf
+```
+
+#### 🔷 Hyperparameter Sweeps
+
+**Compare all models:**
+```bash
+python -m src.train --multirun \
+    model=lightgcn,ngcf,ncf,svd,item_cf \
+    seed=42,123,456
+```
+
+**Grid search for LightGCN:**
+```bash
+python -m src.train --multirun \
+    model=lightgcn \
+    model.embedding_dim=32,64,128 \
+    model.num_layers=2,3,4 \
+    trainer.learning_rate=0.001,0.0001
+```
+
+**NCF architecture search:**
+```bash
+python -m src.train --multirun \
+    model=ncf \
+    model.mf_dim=32,64 \
+    model.mlp_layers='[64,32,16]','[128,64,32,16]' \
+    model.dropout=0.1,0.2,0.3
+```
+
+**Learning rate optimization:**
 ```bash
 python -m src.train --multirun \
     model=lightgcn,ngcf,ncf \
-    trainer.learning_rate=0.001,0.0001
+    trainer.learning_rate=0.0001,0.0005,0.001,0.005
 ```
+
+#### 🔷 Training Tips & Best Practices
+
+**Device Selection:**
+```bash
+# Use GPU if available
+python -m src.train model=lightgcn device=cuda
+
+# Use MPS (Apple Silicon)
+python -m src.train model=ngcf device=mps
+
+# Force CPU
+python -m src.train model=ncf device=cpu
+```
+
+**Monitoring Training:**
+```bash
+# Enable both MLflow and Wandb
+python -m src.train model=lightgcn \
+    logger.use_mlflow=true \
+    logger.use_wandb=true \
+    logger.wandb.project=movie-rec-exp
+
+# Disable logging for quick tests
+python -m src.train model=ncf \
+    logger.use_mlflow=false \
+    logger.use_wandb=false
+```
+
+**Early Stopping:**
+```bash
+# Custom early stopping patience
+python -m src.train model=lightgcn \
+    trainer.early_stopping.enabled=true \
+    trainer.early_stopping.patience=20 \
+    trainer.early_stopping.metric=ndcg@10 \
+    trainer.early_stopping.mode=max
+```
+
+**Experiment Tracking:**
+```bash
+# Custom experiment and run names
+python -m src.train model=lightgcn \
+    experiment_name=lightgcn_experiments \
+    run_name=exp_lr0.001_emb128 \
+    model.embedding_dim=128
+```
+
+#### 📊 Model Comparison Guide
+
+| Model | Training Time | Memory | Cold Start | Accuracy | Interpretability |
+|-------|--------------|---------|------------|----------|------------------|
+| **LightGCN** | ⚡⚡ Medium | 💾💾 Medium | ❌ Poor | ⭐⭐⭐⭐⭐ Excellent | ⚠️ Low |
+| **NGCF** | ⚡ Slow | 💾💾💾 High | ❌ Poor | ⭐⭐⭐⭐ Good | ⚠️ Low |
+| **NCF** | ⚡⚡⚡ Fast | 💾 Low | ❌ Poor | ⭐⭐⭐⭐ Good | ⚠️ Medium |
+| **SVD** | ⚡⚡⚡⚡ Very Fast | 💾 Low | ❌ Poor | ⭐⭐⭐ Fair | ✅ High |
+| **Item-CF** | ⚡⚡⚡⚡ Very Fast | 💾💾 Medium | ✅ Good | ⭐⭐⭐ Fair | ✅ High |
+| **Hybrid** | ⚡⚡ Medium | 💾💾 Medium | ✅ Good | ⭐⭐⭐⭐⭐ Excellent | ⚠️ Medium |
+
+**Recommendations by Use Case:**
+
+- **Highest Accuracy**: LightGCN, Hybrid Ensemble
+- **Fastest Training**: SVD, Item-CF
+- **Cold Start Users**: Item-CF, Hybrid Ensemble
+- **Production Serving**: LightGCN (with FAISS), NCF
+- **Interpretability**: SVD, Item-CF
+- **Best Overall**: Hybrid Ensemble (combines strengths)
 
 ### Running the API Server
 
@@ -221,17 +406,53 @@ curl -X POST "http://localhost:5000/api/batch-recommend" \
     -d '{"user_ids": [1, 2, 3], "top_k": 10}'
 ```
 
-## 📊 Metrics
+## 📊 Evaluation & Metrics
+
+### Supported Metrics
 
 The system supports the following evaluation metrics:
 
-- **Precision@K** - Fraction of relevant items in top-K
-- **Recall@K** - Fraction of relevant items retrieved
-- **NDCG@K** - Normalized Discounted Cumulative Gain
-- **Hit Rate@K** - Whether any relevant item is in top-K
-- **MAP@K** - Mean Average Precision
-- **MRR@K** - Mean Reciprocal Rank
-- **Coverage** - Catalog coverage
+- **Precision@K** - Fraction of relevant items in top-K recommendations
+- **Recall@K** - Fraction of all relevant items that were retrieved
+- **NDCG@K** - Normalized Discounted Cumulative Gain (position-aware)
+- **Hit Rate@K** - Whether any relevant item appears in top-K
+- **MAP@K** - Mean Average Precision across all users
+- **MRR@K** - Mean Reciprocal Rank of first relevant item
+- **Coverage** - Percentage of catalog items recommended
+
+### Evaluation During Training
+
+Metrics are automatically computed during training at validation time:
+
+```bash
+# Evaluate at multiple K values
+python -m src.train model=lightgcn \
+    evaluation.k_values=[5,10,20] \
+    evaluation.metrics=['precision','recall','ndcg','hit_rate']
+```
+
+### Post-Training Evaluation
+
+Evaluate a trained model on test set:
+
+```bash
+# Using Python API
+python -c "
+from src.models import LightGCN
+from src.data import MovieLensDataModule
+from src.evaluation import Evaluator
+
+# Load model and data
+model = LightGCN.load('checkpoints/lightgcn_best.pt')
+data = MovieLensDataModule('data/movielens-small')
+data.setup()
+
+# Evaluate
+evaluator = Evaluator(k_values=[5, 10, 20])
+results = evaluator.evaluate(model, data.test_data)
+evaluator.print_results(results)
+"
+```
 
 ## 🔧 Configuration
 
@@ -300,7 +521,112 @@ isort src/ tests/
 mypy src/
 ```
 
-## 📚 References
+## � Troubleshooting
+
+### Common Issues
+
+**1. CUDA Out of Memory**
+```bash
+# Reduce batch size
+python -m src.train model=lightgcn trainer.batch_size=1024
+
+# Use gradient accumulation
+python -m src.train model=ngcf \
+    trainer.batch_size=512 \
+    trainer.accumulate_grad_batches=4
+```
+
+**2. PyTorch Geometric Installation Issues**
+```bash
+# Install with specific CUDA version
+pip install torch-geometric torch-scatter torch-sparse \
+    -f https://data.pyg.org/whl/torch-2.0.0+cu118.html
+```
+
+**3. Wandb Authentication**
+```bash
+# Login to Wandb
+wandb login
+
+# Or set API key in .env
+echo "WANDB_API_KEY=your_key_here" >> .env
+```
+
+**4. Slow Training on CPU**
+```bash
+# Use smaller model or dataset
+python -m src.train model=ncf \
+    model.mlp_layers=[64,32,16] \
+    data.train_size=0.5
+```
+
+**5. FileNotFoundError for Data**
+```bash
+# Ensure data directory exists
+ls data/movielens-small/ratings.csv
+
+# Re-download if missing
+wget https://files.grouplens.org/datasets/movielens/ml-latest-small.zip
+unzip ml-latest-small.zip -d data/movielens-small/
+```
+
+## 🚀 Quick Reference
+
+### Essential Commands
+
+```bash
+# Train with default settings
+python -m src.train model=<MODEL_NAME>
+
+# Override any config parameter
+python -m src.train model=lightgcn <key>=<value>
+
+# Run hyperparameter sweep
+python -m src.train --multirun model=<MODELS> <param>=<values>
+
+# View config without training
+python -m src.train model=lightgcn --cfg job
+
+# Start API server
+python run_server.py --model-dir checkpoints --data-dir data/movielens-small
+```
+
+### Model Names
+
+- `lightgcn` - LightGCN graph model
+- `ngcf` - Neural Graph Collaborative Filtering
+- `ncf` - Neural Collaborative Filtering
+- `svd` - Singular Value Decomposition
+- `item_cf` - Item-based Collaborative Filtering
+- `hybrid_ensemble` - Hybrid ensemble model
+
+### Common Config Overrides
+
+```bash
+# Training hyperparameters
+trainer.max_epochs=<int>
+trainer.learning_rate=<float>
+trainer.batch_size=<int>
+
+# Model architecture
+model.embedding_dim=<int>
+model.num_layers=<int>
+model.dropout=<float>
+
+# Data settings
+data.train_ratio=<float>
+data.val_ratio=<float>
+data.negative_samples=<int>
+
+# Logging
+logger.use_wandb=<bool>
+logger.use_mlflow=<bool>
+
+# Device
+device=<cpu|cuda|mps>
+```
+
+## �📚 References
 
 - [LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation](https://arxiv.org/abs/2002.02126)
 - [Neural Graph Collaborative Filtering](https://arxiv.org/abs/1905.08108)
