@@ -60,8 +60,8 @@ MODELS_CONFIG = {
         "type": "hybrid",
         "gpu": True,
         "config_overrides": {},
-        # Use only top 2 models for optimal ensemble (RRF works best with fewer strong models)
-        "base_models": ["lightgcn", "ngcf"],
+        # Use ALL models for ensemble diversity
+        "base_models": ["lightgcn", "ngcf", "ncf", "svd", "item_cf"],
     },
 }
 
@@ -430,16 +430,22 @@ def train_hybrid_model(
     # Get validation data for weight optimization
     val_ground_truth, val_train_items = data_module.get_evaluation_data("val")
     val_users = list(val_ground_truth.keys())
-    
     # Optimize weights on validation set
     console.print("[cyan]Optimizing ensemble weights on validation set...[/cyan]")
     
-    # Simple equal weights for top 2 models (LightGCN + NGCF)
-    # RRF fusion works best with equal voting
-    best_weights = {name: 1.0 / len(models_dict) for name in models_dict}
+    # Get validation data for weight optimization
+    val_ground_truth, val_train_items = data_module.get_evaluation_data("val")
+    val_users = list(val_ground_truth.keys())
     
+    best_weights = hybrid.optimize_weights(
+        val_users=val_users,
+        ground_truth=val_ground_truth,
+        train_items=val_train_items,
+        k=10,
+        weight_steps=11,
+    )
     hybrid.set_weights(best_weights)
-    console.print(f"[green]Using equal weights: {best_weights}[/green]")
+    console.print(f"[green]Optimized weights: {best_weights}[/green]")
     
     # Save optimized hybrid config
     hybrid.save(hybrid_dir / "final_model.pt")
