@@ -214,13 +214,20 @@ class HybridEnsemble(BaseRecommender):
                          users_m = user_tensor.cpu()
                          scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
                          cached_preds[name] = (scores.cpu(), items.cpu())
+                    elif type(model).__name__ in ['LightGCN', 'NGCF']:
+                         # LightGCN/NGCF need input on same device as model
+                         d = next(model.parameters()).device
+                         users_m = user_tensor.to(d)
+                         scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
+                         cached_preds[name] = (scores.cpu(), items.cpu())
                     else:
-                        # LightGCN/NGCF use self.device (cuda) typically
-                        # But Pre-computed embeddings in Hybrid might handle this
-                        # Simplest is to call hybrid internal recommend logic?
-                        # No, we want raw model output.
-                        # Let's rely on model's recommend.
-                        scores, items = model.recommend(user_tensor, k=k, exclude_items=train_items)
+                        # Generic fallback - try to infer device
+                        try:
+                            d = next(model.parameters()).device
+                            users_m = user_tensor.to(d)
+                        except StopIteration:
+                            users_m = user_tensor
+                        scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
                         cached_preds[name] = (scores.cpu(), items.cpu())
                     
                     valid_models.append(name)
@@ -602,7 +609,11 @@ class HybridEnsemble(BaseRecommender):
                             top_scores, top_items = torch.topk(scores, max_k, dim=-1)
                             del scores, user_emb, item_emb, user_emb_batch
                         else:
-                            continue
+                            # Fallback: call model.recommend directly with proper device
+                            model_device = next(model.parameters()).device
+                            users_m = users_clamped.to(model_device)
+                            top_scores, top_items = model.recommend(users_m, k=max_k, exclude_items=exclude_items)
+                            del users_m
                     
                     elif model_type == 'NCF':
                         # NCF: use proper device from model parameters
