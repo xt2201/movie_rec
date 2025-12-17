@@ -201,11 +201,23 @@ class HybridEnsemble(BaseRecommender):
         for name, model in self.models.items():
             try:
                 with torch.no_grad():
-                    # For prediction, we need to handle specific model requirements (like NCF device)
-                    # This logic is duplicated from recommend(), ideally refactor
-                    # For optimization, we just call the model's recommend directly
-                    # Careful with device handling
-                    if type(model).__name__ == 'NCF':
+                    model_type = type(model).__name__
+                    
+                    if model_type in ['LightGCN', 'NGCF']:
+                        # Use pre-computed embeddings
+                        if name not in self._graph_embeddings:
+                            print(f"  Warning: No pre-computed embeddings for {name}, skipping")
+                            continue
+                        
+                        user_emb, item_emb = self._graph_embeddings[name]
+                        # Compute scores using embeddings
+                        users_m = user_tensor.clamp(0, user_emb.size(0) - 1)
+                        user_emb_batch = user_emb[users_m]
+                        scores = torch.matmul(user_emb_batch, item_emb.T)
+                        top_scores, items = torch.topk(scores, k=k, dim=-1)
+                        cached_preds[name] = (top_scores.cpu(), items.cpu())
+                    
+                    elif type(model).__name__ == 'NCF':
                          d = next(model.parameters()).device
                          users_m = user_tensor.to(d)
                          scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
@@ -217,12 +229,6 @@ class HybridEnsemble(BaseRecommender):
                          cached_preds[name] = (scores.cpu(), items.cpu())
                     elif type(model).__name__ == 'ItemBasedCF':
                          users_m = user_tensor.cpu()
-                         scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
-                         cached_preds[name] = (scores.cpu(), items.cpu())
-                    elif type(model).__name__ in ['LightGCN', 'NGCF']:
-                         # LightGCN/NGCF need input on same device as model
-                         d = next(model.parameters()).device
-                         users_m = user_tensor.to(d)
                          scores, items = model.recommend(users_m, k=k, exclude_items=train_items)
                          cached_preds[name] = (scores.cpu(), items.cpu())
                     else:
