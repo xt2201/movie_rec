@@ -162,6 +162,7 @@ class HybridEnsemble(BaseRecommender):
         train_items: dict[int, set[int]],
         k: int = 10,
         weight_steps: int = 11,
+        performance_prior: dict[str, float] | None = None,
     ) -> dict[str, float]:
         """
         Optimize ensemble weights using grid search on validation set.
@@ -172,6 +173,8 @@ class HybridEnsemble(BaseRecommender):
             train_items: Dict of user -> set of training items to exclude
             k: Top-K for evaluation
             weight_steps: Number of weight values to try (0 to 1)
+            performance_prior: Optional dict of model_name -> known performance (e.g., NDCG)
+                              Used to bias initial candidates toward strong models
             
         Returns:
             Best weights found
@@ -253,6 +256,21 @@ class HybridEnsemble(BaseRecommender):
         
         # Always try equal weights first
         candidates = [np.ones(num_models) / num_models]
+        
+        # If performance_prior is provided, add candidates biased toward best performers
+        if performance_prior:
+            # Normalize performance scores to get prior weights
+            prior_scores = np.array([performance_prior.get(n, 0.1) for n in model_names])
+            prior_scores = prior_scores / prior_scores.sum()
+            
+            # Add performance-based weights
+            candidates.append(prior_scores)
+            
+            # Add scaled variants (more extreme toward best model)
+            for power in [1.5, 2.0, 3.0]:
+                scaled = prior_scores ** power
+                scaled = scaled / scaled.sum()
+                candidates.append(scaled)
         
         # Add single-model weights (1.0 for one, 0 for others)
         eye = np.eye(num_models)
