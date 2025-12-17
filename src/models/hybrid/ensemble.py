@@ -88,7 +88,12 @@ class HybridEnsemble(BaseRecommender):
             if model_type in ['LightGCN', 'NGCF']:
                 try:
                     with torch.no_grad():
-                        user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
+                        # Move edge_index to model device
+                        model_device = next(model.parameters()).device
+                        edge_index_dev = self.edge_index.to(model_device)
+                        edge_weight_dev = self.edge_weight.to(model_device) if self.edge_weight is not None else None
+                        
+                        user_emb, item_emb = model.forward(edge_index_dev, edge_weight_dev)
                         self._graph_embeddings[name] = (user_emb, item_emb)
                 except Exception as e:
                     print(f"Warning: Could not pre-compute embeddings for {name}: {e}")
