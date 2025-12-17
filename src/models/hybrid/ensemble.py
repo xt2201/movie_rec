@@ -184,18 +184,22 @@ class HybridEnsemble(BaseRecommender):
         **kwargs,
     ) -> torch.Tensor:
         """
-        Score-normalized weighted average fusion.
+        RRF-based weighted fusion using model.recommend().
         
-        Computes scores from each model, normalizes to [0, 1], then combines.
-        Uses pre-computed embeddings for graph models.
+        Instead of computing all-item scores (memory-intensive),
+        uses recommend() from each model and combines via RRF.
         """
         num_users = len(users)
         device = users.device
+        k_rrf = 60  # RRF constant
+        max_k = min(100, self.num_items)  # Top-K from each model
         
-        # Initialize
+        # Initialize combined scores
         combined_scores = torch.zeros((num_users, self.num_items), device=device)
-        total_weight = 0.0
         models_used = 0
+        
+        # Flatten users if needed
+        users_flat = users.flatten() if users.dim() > 1 else users
         
         for name, model in self.models.items():
             weight = weights.get(name, 0)
@@ -210,65 +214,67 @@ class HybridEnsemble(BaseRecommender):
                         # Use pre-computed embeddings for graph models
                         if name in self._graph_embeddings:
                             user_emb, item_emb = self._graph_embeddings[name]
-                            user_emb_batch = user_emb[users]
+                            user_emb_batch = user_emb[users_flat]
                             scores = torch.matmul(user_emb_batch, item_emb.T)
+                            # Get top-K
+                            top_scores, top_items = torch.topk(scores, max_k, dim=-1)
                         elif self.edge_index is not None:
-                            # Compute on-the-fly if not pre-computed
                             user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
-                            user_emb_batch = user_emb[users]
+                            user_emb_batch = user_emb[users_flat]
                             scores = torch.matmul(user_emb_batch, item_emb.T)
+                            top_scores, top_items = torch.topk(scores, max_k, dim=-1)
                         else:
                             print(f"Warning: {name} requires edge_index, skipping")
                             continue
                     
                     elif model_type == 'NCF':
-                        # NCF - compute scores for all items per user
-                        all_items = torch.arange(self.num_items, device=device)
-                        batch_scores = []
-                        for user in users:
-                            user_exp = user.unsqueeze(0).expand(self.num_items)
-                            score = torch.sigmoid(model.forward(user_exp, all_items).squeeze())
-                            batch_scores.append(score)
-                        scores = torch.stack(batch_scores)
+                        # Use NCF's recommend method - clamp user indices
+                        max_user = model.num_users - 1
+                        users_clamped = torch.clamp(users_flat, 0, max_user)
+                        users_ncf = users_clamped.to(next(model.parameters()).device)
+                        top_scores, top_items = model.recommend(users_ncf, k=max_k)
+                        top_items = top_items.to(device)
                     
                     elif model_type == 'ItemBasedCF':
-                        # ItemCF - uses its own forward
-                        scores = model.forward(users)
+                        # Use ItemCF's recommend method - clamp user indices
+                        users_cpu = users_flat.cpu()
+                        max_user = model.num_users - 1
+                        users_clipped = torch.clamp(users_cpu, 0, max_user)
+                        top_scores, top_items = model.recommend(users_clipped, k=max_k)
+                        top_items = top_items.to(device)
                     
                     elif model_type == 'SVDRecommender':
-                        # SVD - uses its own forward
-                        scores = model.forward(users)
+                        # Use SVD's recommend method - clamp user indices
+                        max_user = model.num_users - 1
+                        users_clamped = torch.clamp(users_flat, 0, max_user)
+                        model_device = next(model.parameters()).device
+                        users_svd = users_clamped.to(model_device)
+                        top_scores, top_items = model.recommend(users_svd, k=max_k)
+                        top_items = top_items.to(device)
                     
                     else:
                         # Generic fallback
                         try:
-                            scores = model.forward(users, items, **kwargs)
+                            top_scores, top_items = model.recommend(users_flat, k=max_k)
+                            top_items = top_items.to(device)
                         except Exception:
                             continue
                     
-                    # Normalize scores to [0, 1]
-                    if scores.numel() > 0:
-                        scores_min = scores.min()
-                        scores_max = scores.max()
-                        if scores_max > scores_min:
-                            scores = (scores - scores_min) / (scores_max - scores_min)
-                        else:
-                            scores = torch.zeros_like(scores)
+                    # Convert to RRF scores
+                    for i in range(num_users):
+                        for rank, item_idx in enumerate(top_items[i].tolist()):
+                            if 0 <= item_idx < self.num_items:
+                                rrf_score = weight / (k_rrf + rank)
+                                combined_scores[i, item_idx] += rrf_score
                     
-                    combined_scores += weight * scores
-                    total_weight += weight
                     models_used += 1
                     
             except Exception as e:
-                print(f"Warning: Could not compute scores from {name}: {e}")
+                print(f"Warning: Could not get recommendations from {name}: {e}")
                 continue
         
         if models_used == 0:
             print("Warning: No models contributed to hybrid scores")
-        
-        # Normalize by total weight
-        if total_weight > 0:
-            combined_scores /= total_weight
         
         return combined_scores
     
@@ -353,7 +359,10 @@ class HybridEnsemble(BaseRecommender):
         **kwargs,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Generate top-K recommendations.
+        Generate top-K recommendations using RRF fusion of base models.
+        
+        This method directly calls base models' recommend() and merges
+        results via RRF, avoiding full score matrix allocation.
         
         Args:
             users: User indices
@@ -363,20 +372,114 @@ class HybridEnsemble(BaseRecommender):
         Returns:
             Tuple of (top-K scores, top-K item indices) for each user
         """
-        scores = self.forward(users, **kwargs)
+        num_users = len(users)
+        device = users.device
+        k_rrf = 60  # RRF constant
+        max_k = min(100, self.num_items)  # Top-K from each model
         
-        # Exclude items if specified
-        if exclude_items is not None:
-            for i, user_id in enumerate(users.tolist()):
-                if user_id in exclude_items:
-                    for item_id in exclude_items[user_id]:
-                        if item_id < self.num_items:
-                            scores[i, item_id] = float("-inf")
+        # Flatten users if needed
+        users_flat = users.flatten() if users.dim() > 1 else users
         
-        # Ensure k doesn't exceed num_items
-        k = min(k, self.num_items)
-        top_scores, indices = torch.topk(scores, k, dim=-1)
-        return top_scores, indices
+        weights = self._get_weights()
+        
+        # Collect RRF scores for each item
+        # Use dict to avoid full matrix: {user_idx: {item_idx: score}}
+        user_item_scores = [{} for _ in range(num_users)]
+        models_used = 0
+        
+        for name, model in self.models.items():
+            weight = weights.get(name, 0)
+            if weight == 0:
+                continue
+            
+            try:
+                with torch.no_grad():
+                    model_type = type(model).__name__
+                    
+                    # Clamp user indices to valid range
+                    max_user = model.num_users - 1
+                    users_clamped = torch.clamp(users_flat, 0, max_user)
+                    
+                    if model_type in ['LightGCN', 'NGCF']:
+                        if name in self._graph_embeddings:
+                            user_emb, item_emb = self._graph_embeddings[name]
+                            user_emb_batch = user_emb[users_clamped]
+                            scores = torch.matmul(user_emb_batch, item_emb.T)
+                            top_scores, top_items = torch.topk(scores, max_k, dim=-1)
+                        elif self.edge_index is not None:
+                            user_emb, item_emb = model.forward(self.edge_index, self.edge_weight)
+                            user_emb_batch = user_emb[users_clamped]
+                            scores = torch.matmul(user_emb_batch, item_emb.T)
+                            top_scores, top_items = torch.topk(scores, max_k, dim=-1)
+                        else:
+                            continue
+                    
+                    elif model_type == 'SVDRecommender':
+                        model_device = next(model.parameters()).device
+                        users_svd = users_clamped.to(model_device)
+                        top_scores, top_items = model.recommend(users_svd, k=max_k, exclude_items=exclude_items)
+                    
+                    elif model_type == 'ItemBasedCF':
+                        users_cpu = users_clamped.cpu()
+                        top_scores, top_items = model.recommend(users_cpu, k=max_k, exclude_items=exclude_items)
+                    
+                    else:
+                        # Generic fallback
+                        try:
+                            top_scores, top_items = model.recommend(users_clamped, k=max_k, exclude_items=exclude_items)
+                        except Exception:
+                            continue
+                    
+                    # Convert to RRF scores and accumulate
+                    top_items_cpu = top_items.cpu()
+                    for i in range(num_users):
+                        for rank, item_idx in enumerate(top_items_cpu[i].tolist()):
+                            if 0 <= item_idx < self.num_items:
+                                rrf_score = weight / (k_rrf + rank)
+                                if item_idx not in user_item_scores[i]:
+                                    user_item_scores[i][item_idx] = 0.0
+                                user_item_scores[i][item_idx] += rrf_score
+                    
+                    models_used += 1
+                    
+            except Exception as e:
+                print(f"Warning: Could not get recommendations from {name}: {e}")
+                continue
+        
+        if models_used == 0:
+            print("Warning: No models contributed to hybrid recommendations")
+            # Return empty recommendations
+            return (
+                torch.zeros((num_users, k), device=device),
+                torch.zeros((num_users, k), dtype=torch.long, device=device),
+            )
+        
+        # Sort and get top-K for each user
+        top_scores_list = []
+        top_items_list = []
+        
+        for i in range(num_users):
+            # Sort items by score descending
+            sorted_items = sorted(
+                user_item_scores[i].items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:k]
+            
+            if len(sorted_items) < k:
+                # Pad with zeros
+                sorted_items.extend([(0, 0.0)] * (k - len(sorted_items)))
+            
+            items = [item for item, score in sorted_items]
+            scores = [score for item, score in sorted_items]
+            
+            top_items_list.append(items)
+            top_scores_list.append(scores)
+        
+        return (
+            torch.tensor(top_scores_list, dtype=torch.float32, device=device),
+            torch.tensor(top_items_list, dtype=torch.long, device=device),
+        )
     
     def save(self, path: Path) -> None:
         """Save ensemble configuration."""

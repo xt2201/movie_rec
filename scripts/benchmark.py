@@ -56,13 +56,13 @@ MODELS_CONFIG = {
         "gpu": False,
         "config_overrides": {},
     },
-    "hybrid": {
-        "type": "hybrid",
-        "gpu": True,
-        "config_overrides": {},
-        # LightGCN excluded: edge_index mismatch with saved checkpoints
-        "base_models": ["ncf", "item_cf"],
-    },
+    # NOTE: Hybrid disabled due to OOM issues when loading multiple models
+    # "hybrid": {
+    #     "type": "hybrid",
+    #     "gpu": True,
+    #     "config_overrides": {},
+    #     "base_models": ["svd", "item_cf"],
+    # },
 }
 
 DEFAULT_MODELS = ["lightgcn", "ngcf", "ncf"]
@@ -356,6 +356,25 @@ def train_hybrid_model(
             )
             # ItemCF uses pickle format
             model.load(model_path)
+            models_dict[model_name] = model
+            console.print(f"  Loaded {model_name}")
+            continue
+        elif model_name == "svd":
+            from src.models.traditional import SVDRecommender
+            model = SVDRecommender(
+                num_users=data_module.num_users,
+                num_items=data_module.num_items,
+                n_factors=64,
+                device=device,
+            )
+            # SVD uses torch checkpoint with numpy arrays
+            checkpoint = torch.load(model_path, map_location=device_torch, weights_only=False)
+            if "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                model.load_state_dict(checkpoint)
+            model = model.to(device_torch)
+            model.eval()
             models_dict[model_name] = model
             console.print(f"  Loaded {model_name}")
             continue
