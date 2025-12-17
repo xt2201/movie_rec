@@ -232,11 +232,13 @@ class SVDRecommender(BaseRecommender):
         """
         self.eval()
         with torch.no_grad():
-            users = users.to(self.device)
+            # Use embedding device to ensure compatibility if model was moved
+            device = self.user_embedding.weight.device
+            users = users.to(device)
             user_emb = self.user_embedding(users)
             
             if items is not None:
-                items = items.to(self.device)
+                items = items.to(device)
                 item_emb = self.item_embedding(items)
                 scores = (user_emb * item_emb).sum(dim=-1)
             else:

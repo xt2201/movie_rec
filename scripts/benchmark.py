@@ -56,13 +56,13 @@ MODELS_CONFIG = {
         "gpu": False,
         "config_overrides": {},
     },
-    # NOTE: Hybrid disabled due to OOM issues when loading multiple models
-    # "hybrid": {
-    #     "type": "hybrid",
-    #     "gpu": True,
-    #     "config_overrides": {},
-    #     "base_models": ["svd", "item_cf"],
-    # },
+    "hybrid": {
+        "type": "hybrid",
+        "gpu": True,
+        "config_overrides": {},
+        # Use ALL models as requested
+        "base_models": ["lightgcn", "ngcf", "ncf", "svd", "item_cf"],
+    },
 }
 
 DEFAULT_MODELS = ["lightgcn", "ngcf", "ncf"]
@@ -347,12 +347,21 @@ def train_hybrid_model(
                 mlp_layers=[128, 64, 32, 16],
                 device=device,
             )
+        elif model_name == "ngcf":
+            model = NGCF(
+                num_users=data_module.num_users,
+                num_items=data_module.num_items,
+                embedding_dim=64,
+                num_layers=3,
+                device=device,
+            )
         elif model_name == "item_cf":
             from src.models.traditional import ItemBasedCF
             model = ItemBasedCF(
                 num_users=data_module.num_users,
                 num_items=data_module.num_items,
                 k_neighbors=50,
+                device="cpu",  # Force CPU to avoid GPU OOM in hybrid
             )
             # ItemCF uses pickle format
             model.load(model_path)
@@ -361,19 +370,20 @@ def train_hybrid_model(
             continue
         elif model_name == "svd":
             from src.models.traditional import SVDRecommender
+            # Force CPU for Hybrid to avoid OOM/Conflicts
             model = SVDRecommender(
                 num_users=data_module.num_users,
                 num_items=data_module.num_items,
                 n_factors=64,
-                device=device,
+                device="cpu",
             )
             # SVD uses torch checkpoint with numpy arrays
-            checkpoint = torch.load(model_path, map_location=device_torch, weights_only=False)
+            checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
             if "model_state_dict" in checkpoint:
                 model.load_state_dict(checkpoint["model_state_dict"])
             else:
                 model.load_state_dict(checkpoint)
-            model = model.to(device_torch)
+            model = model.to("cpu")
             model.eval()
             models_dict[model_name] = model
             console.print(f"  Loaded {model_name}")
@@ -398,41 +408,60 @@ def train_hybrid_model(
         console.print("[red]Need at least 2 models for hybrid ensemble[/red]")
         return {}
     
-    # Get edge_index for graph models
-    edge_index = data_module.edge_index.to(device_torch) if hasattr(data_module, 'edge_index') else None
+    # Get edge_index for graph models (keep on CPU)
+    edge_index = data_module.edge_index.to("cpu") if hasattr(data_module, 'edge_index') else None
     
-    # Create hybrid ensemble with edge_index for graph models
+    # Create hybrid ensemble (CPU)
     hybrid = HybridEnsemble(
         num_users=data_module.num_users,
         num_items=data_module.num_items,
         models=models_dict,
         weights={name: 1.0 / len(models_dict) for name in models_dict},
         fusion_method="weighted_average",
-        device=device,
+        k_rrf=20,  # Lower k = more emphasis on top-ranked items
+        device="cpu",
         edge_index=edge_index,
     )
     
     # Save hybrid config
     hybrid_dir = checkpoint_dir / "hybrid"
     hybrid_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Get validation data for weight optimization
+    val_ground_truth, val_train_items = data_module.get_evaluation_data("val")
+    val_users = list(val_ground_truth.keys())
+    
+    # Optimize weights on validation set
+    console.print("[cyan]Optimizing ensemble weights on validation set...[/cyan]")
+    best_weights = hybrid.optimize_weights(
+        val_users=val_users,
+        ground_truth=val_ground_truth,
+        train_items=val_train_items,
+        k=10,
+        weight_steps=11,
+    )
+    console.print(f"[green]Optimized weights: {best_weights}[/green]")
+    
+    # Save optimized hybrid config
     hybrid.save(hybrid_dir / "final_model.pt")
     
-    # Evaluate - need edge_index for LightGCN
+    # Evaluate on test set
     evaluator = Evaluator(
         k_values=[5, 10, 20],
         metrics=["precision", "recall", "ndcg", "hit_rate"],
+        batch_size=32,
     )
     
     ground_truth, train_items = data_module.get_evaluation_data("test")
-    edge_index = data_module.edge_index.to(device_torch) if hasattr(data_module, 'edge_index') else None
+    # edge_index is already CPU
     
     results = evaluator.evaluate(
         model=hybrid,
         ground_truth=ground_truth,
         train_items=train_items,
         num_items=data_module.num_items,
-        edge_index=edge_index,
-        device=device_torch,
+        edge_index=None,  # Do NOT pass edge_index to Hybrid, it uses pre-computed embeddings
+        device=torch.device("cpu"),
     )
     
     evaluator.print_results(results)
