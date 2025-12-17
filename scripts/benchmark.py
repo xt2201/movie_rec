@@ -60,8 +60,8 @@ MODELS_CONFIG = {
         "type": "hybrid",
         "gpu": True,
         "config_overrides": {},
-        # Use ALL models as requested
-        "base_models": ["lightgcn", "ngcf", "ncf", "svd", "item_cf"],
+        # Use only top 2 models for optimal ensemble (RRF works best with fewer strong models)
+        "base_models": ["lightgcn", "ngcf"],
     },
 }
 
@@ -434,27 +434,12 @@ def train_hybrid_model(
     # Optimize weights on validation set
     console.print("[cyan]Optimizing ensemble weights on validation set...[/cyan]")
     
-    # Performance prior based on known benchmark results
-    # This biases the optimization toward models known to perform well
-    performance_prior = {
-        "lightgcn": 0.2313,  # Best performer
-        "ngcf": 0.2181,
-        "ncf": 0.1822,
-        "item_cf": 0.1824,
-        "svd": 0.1143,
-    }
-    
-    # Use performance prior directly as weights (skip optimization)
-    # Power=2 emphasizes the best performers more strongly
-    import numpy as np
-    model_names = list(models_dict.keys())
-    prior_scores = np.array([performance_prior.get(n, 0.1) for n in model_names])
-    prior_scores = prior_scores ** 2  # Square to emphasize best models
-    prior_scores = prior_scores / prior_scores.sum()
-    best_weights = {name: float(prior_scores[i]) for i, name in enumerate(model_names)}
+    # Simple equal weights for top 2 models (LightGCN + NGCF)
+    # RRF fusion works best with equal voting
+    best_weights = {name: 1.0 / len(models_dict) for name in models_dict}
     
     hybrid.set_weights(best_weights)
-    console.print(f"[green]Performance-based weights: {best_weights}[/green]")
+    console.print(f"[green]Using equal weights: {best_weights}[/green]")
     
     # Save optimized hybrid config
     hybrid.save(hybrid_dir / "final_model.pt")
