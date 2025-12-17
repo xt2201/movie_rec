@@ -303,7 +303,7 @@ def train_hybrid_model(
     """Train a hybrid ensemble model using pretrained base models."""
     from src.data import MovieLensDataModule
     from src.evaluation import Evaluator
-    from src.models import LightGCN, NCF, HybridEnsemble
+    from src.models import LightGCN, NCF, NGCF, HybridEnsemble
     
     console.print(f"\n[cyan]Training hybrid with base models: {base_models}[/cyan]")
     
