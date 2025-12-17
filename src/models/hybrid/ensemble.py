@@ -248,8 +248,8 @@ class HybridEnsemble(BaseRecommender):
         if not valid_models:
             return self.weights
 
-        # Random search settings
-        num_trials = 50 if num_models <= 2 else 100
+        # Random search settings - more trials for better exploration
+        num_trials = 100 if num_models <= 2 else 200
         
         # Always try equal weights first
         candidates = [np.ones(num_models) / num_models]
@@ -258,11 +258,25 @@ class HybridEnsemble(BaseRecommender):
         eye = np.eye(num_models)
         candidates.extend([eye[i] for i in range(num_models)])
         
-        # Add random candidates
+        # Add biased candidates (high weight on one model, rest split)
+        for i in range(num_models):
+            for alpha in [0.6, 0.7, 0.8, 0.9, 0.95]:
+                w = np.ones(num_models) * (1.0 - alpha) / max(1, num_models - 1)
+                w[i] = alpha
+                candidates.append(w)
+        
+        # Add pairwise combinations (50% each for top pairs)
+        for i in range(num_models):
+            for j in range(i + 1, num_models):
+                w = np.zeros(num_models)
+                w[i] = 0.5
+                w[j] = 0.5
+                candidates.append(w)
+        
+        # Add random candidates with various concentrations
         for _ in range(num_trials):
-            # Sample from Dirichlet distribution to ensure sum(scores)=1
-            # alpha=1 gives uniform on simplex
-            w = np.random.dirichlet(np.ones(num_models))
+            # Dirichlet with alpha=0.5 biases toward sparse (dominant) weights
+            w = np.random.dirichlet(np.ones(num_models) * 0.5)
             candidates.append(w)
             
         k_rrf = self.k_rrf
