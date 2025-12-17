@@ -444,15 +444,17 @@ def train_hybrid_model(
         "svd": 0.1143,
     }
     
-    best_weights = hybrid.optimize_weights(
-        val_users=val_users,
-        ground_truth=val_ground_truth,
-        train_items=val_train_items,
-        k=10,
-        weight_steps=11,
-        performance_prior=performance_prior,
-    )
-    console.print(f"[green]Optimized weights: {best_weights}[/green]")
+    # Use performance prior directly as weights (skip optimization)
+    # Power=2 emphasizes the best performers more strongly
+    import numpy as np
+    model_names = list(models_dict.keys())
+    prior_scores = np.array([performance_prior.get(n, 0.1) for n in model_names])
+    prior_scores = prior_scores ** 2  # Square to emphasize best models
+    prior_scores = prior_scores / prior_scores.sum()
+    best_weights = {name: float(prior_scores[i]) for i, name in enumerate(model_names)}
+    
+    hybrid.set_weights(best_weights)
+    console.print(f"[green]Performance-based weights: {best_weights}[/green]")
     
     # Save optimized hybrid config
     hybrid.save(hybrid_dir / "final_model.pt")
