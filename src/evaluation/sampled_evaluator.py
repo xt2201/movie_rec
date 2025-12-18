@@ -52,13 +52,20 @@ def sampled_evaluate(
     if device is None:
         device = next(model.parameters()).device
     
-    # Precompute embeddings for efficiency
-    with torch.no_grad():
-        if edge_index is not None:
+    # Precompute embeddings for efficiency (only for graph models)
+    user_emb = None
+    item_emb = None
+    
+    # Check if model is a graph model (has forward with edge_index)
+    model_type = type(model).__name__
+    is_graph_model = model_type in ['LightGCN', 'NGCF']
+    
+    if is_graph_model and edge_index is not None:
+        with torch.no_grad():
             edge_index = edge_index.to(device)
-        if edge_weight is not None:
-            edge_weight = edge_weight.to(device)
-        user_emb, item_emb = model.forward(edge_index, edge_weight)
+            if edge_weight is not None:
+                edge_weight = edge_weight.to(device)
+            user_emb, item_emb = model.forward(edge_index, edge_weight)
     
     test_users = sorted(ground_truth.keys())
     
@@ -89,14 +96,16 @@ def sampled_evaluate(
         candidates = pos_items + neg_items
         candidates_tensor = torch.tensor(candidates, dtype=torch.long, device=device)
         
-        # Get user embedding
-        user_vec = user_emb[user_idx]  # (emb_dim,)
-        
-        # Get item embeddings for candidates
-        item_vecs = item_emb[candidates_tensor]  # (num_candidates, emb_dim)
-        
-        # Compute scores
-        scores = torch.matmul(item_vecs, user_vec)  # (num_candidates,)
+        # Compute scores based on model type
+        if is_graph_model and user_emb is not None:
+            # Graph model: use precomputed embeddings
+            user_vec = user_emb[user_idx]  # (emb_dim,)
+            item_vecs = item_emb[candidates_tensor]  # (num_candidates, emb_dim)
+            scores = torch.matmul(item_vecs, user_vec)  # (num_candidates,)
+        else:
+            # Neural model (NCF, etc): use forward pass
+            user_tensor = torch.tensor([user_idx] * len(candidates), dtype=torch.long, device=device)
+            scores = model.forward(user_tensor, candidates_tensor).squeeze()  # (num_candidates,)
         
         # Get ranking (higher is better)
         _, indices = torch.sort(scores, descending=True)
