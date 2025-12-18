@@ -206,21 +206,39 @@ def main(cfg: DictConfig) -> float:
     # Evaluate
     console.rule("[bold]Evaluation[/bold]")
     
-    evaluator = Evaluator(
-        k_values=[5, 10, 20],
-        metrics=["precision", "recall", "ndcg", "hit_rate"],
-    )
-    
     ground_truth, train_items = data_module.get_evaluation_data("test")
     
-    results = evaluator.evaluate(
-        model=model,
-        ground_truth=ground_truth,
-        train_items=train_items,
-        num_items=data_module.num_items,
-        edge_index=edge_index,
-        edge_weight=edge_weight,
-        device=device,
+    # Auto-detect evaluation protocol
+    split_strategy = cfg.data.get("split", {}).get("strategy", "random")
+    
+    if split_strategy == "leave_one_out":
+        console.print("[yellow]Using sampled evaluation (LOO: 99 neg + 1 pos)[/yellow]")
+        results = sampled_evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            num_neg_samples=99,
+            k_values=[5, 10, 20],
+            edge_index=edge_index if hasattr(data_module, 'edge_index') else None,
+            edge_weight=edge_weight if hasattr(data_module, 'edge_weights') else None,
+            device=device,
+        )
+    else:
+        console.print("[yellow]Using full-rank evaluation[/yellow]")
+        evaluator = Evaluator(
+            k_values=[5, 10, 20],
+            metrics=["precision", "recall", "ndcg", "hit_rate"],
+        )
+        
+        results = evaluator.evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            edge_index=edge_index,
+            edge_weight=edge_weight,
+            device=device,
         )
         
         evaluator.print_results(results)
