@@ -14,6 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from src.data import MovieLensDataModule
 from src.evaluation import Evaluator
+from src.evaluation.sampled_evaluator import sampled_evaluate
 from src.models.graph import LightGCN, NGCF
 from src.models.neural import NCF
 from src.training import Trainer, TrainerConfig
@@ -220,9 +221,9 @@ def main(cfg: DictConfig) -> float:
         edge_index=edge_index,
         edge_weight=edge_weight,
         device=device,
-    )
-    
-    evaluator.print_results(results)
+        )
+        
+        evaluator.print_results(results)
     
     # Log final metrics
     if tracker:

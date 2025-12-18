@@ -205,6 +205,7 @@ def train_traditional_model(
     """Train a traditional model (SVD, ItemCF)."""
     from src.data import MovieLensDataModule
     from src.evaluation import Evaluator
+from src.evaluation.sampled_evaluator import sampled_evaluate
     
     console.print(f"\n[cyan]Training {model_name}...[/cyan]")
     
@@ -274,22 +275,37 @@ def train_traditional_model(
     model.save(model_checkpoint_dir / "final_model.pt")
     
     # Evaluate
-    evaluator = Evaluator(
-        k_values=[5, 10, 20],
-        metrics=["precision", "recall", "ndcg", "hit_rate"],
-    )
-    
+    # Auto-detect evaluation protocol
+    split_strategy = data_cfg.get("split", {}).get("strategy", "random")
     ground_truth, train_items = data_module.get_evaluation_data("test")
     
-    results = evaluator.evaluate(
-        model=model,
-        ground_truth=ground_truth,
-        train_items=train_items,
-        num_items=data_module.num_items,
-        device=torch.device("cpu"),
-    )
-    
-    evaluator.print_results(results)
+    if split_strategy == "leave_one_out":
+        console.print("[yellow]Using sampled evaluation (LOO: 99 neg + 1 pos)[/yellow]")
+        results = sampled_evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            num_neg_samples=99,
+            k_values=[5, 10, 20],
+            edge_index=None,
+            edge_weight=None,
+            device=torch.device("cpu"),
+        )
+    else:
+        console.print("[yellow]Using full-rank evaluation[/yellow]")
+        evaluator = Evaluator(
+            k_values=[5, 10, 20],
+            metrics=["precision", "recall", "ndcg", "hit_rate"],
+        )
+        results = evaluator.evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            device=torch.device("cpu"),
+        )
+        evaluator.print_results(results)
     
     return results
 
@@ -303,6 +319,7 @@ def train_hybrid_model(
     """Train a hybrid ensemble model using pretrained base models."""
     from src.data import MovieLensDataModule
     from src.evaluation import Evaluator
+from src.evaluation.sampled_evaluator import sampled_evaluate
     from src.models import LightGCN, NCF, NGCF, HybridEnsemble
     
     console.print(f"\n[cyan]Training hybrid with base models: {base_models}[/cyan]")
@@ -451,25 +468,37 @@ def train_hybrid_model(
     hybrid.save(hybrid_dir / "final_model.pt")
     
     # Evaluate on test set
-    evaluator = Evaluator(
-        k_values=[5, 10, 20],
-        metrics=["precision", "recall", "ndcg", "hit_rate"],
-        batch_size=32,
-    )
-    
+    # Auto-detect evaluation protocol
+    split_strategy = data_cfg.get("split", {}).get("strategy", "random")
     ground_truth, train_items = data_module.get_evaluation_data("test")
-    # edge_index is already CPU
     
-    results = evaluator.evaluate(
-        model=hybrid,
-        ground_truth=ground_truth,
-        train_items=train_items,
-        num_items=data_module.num_items,
-        edge_index=None,  # Do NOT pass edge_index to Hybrid, it uses pre-computed embeddings
-        device=torch.device("cpu"),
-    )
-    
-    evaluator.print_results(results)
+    if split_strategy == "leave_one_out":
+        console.print("[yellow]Using sampled evaluation (LOO: 99 neg + 1 pos)[/yellow]")
+        results = sampled_evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            num_neg_samples=99,
+            k_values=[5, 10, 20],
+            edge_index=None,
+            edge_weight=None,
+            device=torch.device("cpu"),
+        )
+    else:
+        console.print("[yellow]Using full-rank evaluation[/yellow]")
+        evaluator = Evaluator(
+            k_values=[5, 10, 20],
+            metrics=["precision", "recall", "ndcg", "hit_rate"],
+        )
+        results = evaluator.evaluate(
+            model=model,
+            ground_truth=ground_truth,
+            train_items=train_items,
+            num_items=data_module.num_items,
+            device=torch.device("cpu"),
+        )
+        evaluator.print_results(results)
     
     return results
 
