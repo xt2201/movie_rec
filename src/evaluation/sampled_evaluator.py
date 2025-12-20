@@ -72,6 +72,8 @@ def sampled_evaluate(
     # Results accumulators
     hits_at_k = {k: [] for k in k_values}
     ndcg_at_k = {k: [] for k in k_values}
+    precision_at_k = {k: [] for k in k_values}
+    recall_at_k = {k: [] for k in k_values}
     
     print(f"Sampled evaluation: {len(test_users)} users, {num_neg_samples} neg samples each")
     
@@ -115,9 +117,18 @@ def sampled_evaluate(
         for k in k_values:
             top_k = ranked_items[:k]
             
+            # Count positives in top-K
+            num_hits = sum(1 for item in top_k if item in pos_items)
+            
             # Hit@K (any positive in top-K?)
-            hit = any(item in pos_items for item in top_k)
+            hit = num_hits > 0
             hits_at_k[k].append(1.0 if hit else 0.0)
+            
+            # Precision@K = hits / K
+            precision_at_k[k].append(num_hits / k)
+            
+            # Recall@K = hits / num_positives
+            recall_at_k[k].append(num_hits / len(pos_items))
             
             # NDCG@K
             dcg = 0.0
@@ -136,5 +147,7 @@ def sampled_evaluate(
     for k in k_values:
         results[f"hit_rate_at_{k}"] = np.mean(hits_at_k[k])
         results[f"ndcg_at_{k}"] = np.mean(ndcg_at_k[k])
+        results[f"precision_at_{k}"] = np.mean(precision_at_k[k])
+        results[f"recall_at_{k}"] = np.mean(recall_at_k[k])
     
     return results
