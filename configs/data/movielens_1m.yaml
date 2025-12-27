@@ -14,7 +14,7 @@ preprocessing:
 
 # Train/Val/Test split
 split:
-  strategy: random  # random, temporal, leave_one_out
+  strategy: leave_one_out  # random, temporal, leave_one_out
   train_ratio: 0.7
   val_ratio: 0.15
   test_ratio: 0.15

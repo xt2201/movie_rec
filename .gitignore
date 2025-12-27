@@ -164,7 +164,7 @@ data/movielens-small/*.json
 !data/movielens-small/.gitkeep
 
 # Results
-results/
+# results/
 
 # Hydra outputs
 outputs/
@@ -179,3 +179,4 @@ multirun/
 secrets/
 *.key
 *.pem
+log/

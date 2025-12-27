@@ -205,7 +205,7 @@ def train_traditional_model(
     """Train a traditional model (SVD, ItemCF)."""
     from src.data import MovieLensDataModule
     from src.evaluation import Evaluator
-from src.evaluation.sampled_evaluator import sampled_evaluate
+    from src.evaluation.sampled_evaluator import sampled_evaluate
     
     console.print(f"\n[cyan]Training {model_name}...[/cyan]")
     
@@ -319,7 +319,7 @@ def train_hybrid_model(
     """Train a hybrid ensemble model using pretrained base models."""
     from src.data import MovieLensDataModule
     from src.evaluation import Evaluator
-from src.evaluation.sampled_evaluator import sampled_evaluate
+    from src.evaluation.sampled_evaluator import sampled_evaluate
     from src.models import LightGCN, NCF, NGCF, HybridEnsemble
     
     console.print(f"\n[cyan]Training hybrid with base models: {base_models}[/cyan]")
